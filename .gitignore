@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# Video outputs
+output/
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+
+# Temp files
+*.wav
+*.tmp
+*.temp
+*.progress
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Config
+.env
+*.local
