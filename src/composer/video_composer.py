@@ -461,46 +461,4 @@ class VideoComposer:
             filters.append(f"{row_labels}vstack=inputs={n_rows}[grid]")
         
         return ";".join(filters)
-
-
-class SmartComposer(VideoComposer):
-    """
-    Enhanced composer with AI-driven decisions.
-    """
-    
-    def __init__(self, config: CompositionConfig = None):
-        super().__init__(config)
-    
-    def select_best_angle(self, segments_at_time: list) -> dict:
-        """
-        Select the best camera angle for a given time.
-        Uses heuristics based on:
-        - Motion quality
-        - Framing
-        - Audio quality
-        """
-        if not segments_at_time:
-            return None
-        
-        best = None
-        best_score = 0
-        
-        for seg in segments_at_time:
-            score = 0
-            
-            # Prefer segments with beat alignment
-            if seg.get('beat_aligned'):
-                score += 10
-            
-            # Prefer longer segments
-            duration = seg['end'] - seg['start']
-            score += duration * 2
-            
-            # Prefer segments with higher energy (more action)
-            score += seg.get('energy_avg', 0.5) * 20
-            
-            if score > best_score:
-                best_score = score
-                best = seg
-        
-        return best
+# SmartComposer moved to smart_composer.py

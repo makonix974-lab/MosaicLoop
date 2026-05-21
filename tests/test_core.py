@@ -1,21 +1,25 @@
 """Test suite for GuitarMultiCam Studio."""
 
+import json
 import sys
 import subprocess
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from sync.audio_sync import SyncManager
 from composer.video_composer import VideoComposer, CompositionConfig
+from composer.smart_composer import SmartComposer, SmartSegment
 from composer.proxy import ProxyManager, ProxyConfig
 from composer.gpu_accel import detect_gpu, GPU_INFO
+from pipeline import Pipeline, PipelineConfig, load_config
 
 
 def test_imports():
     """All modules import without error."""
     from sync import audio_sync
-    from composer import video_composer, proxy, gpu_accel, process_guard
+    from composer import video_composer, smart_composer, proxy, gpu_accel, process_guard
     from analyzer import video_analyzer
     print("  [OK] All modules imported")
 
@@ -62,6 +66,65 @@ def test_composer_init():
     print("  [OK] VideoComposer init OK")
 
 
+def test_smart_composer_init():
+    """SmartComposer initializes without error."""
+    composer = SmartComposer()
+    assert composer is not None
+    assert composer.config is not None
+    print("  [OK] SmartComposer init OK")
+
+
+def test_smart_segment():
+    """SmartSegment dataclass works."""
+    seg = SmartSegment(
+        clip_path="/test/clip.mp4",
+        clip_name="clip.mp4",
+        start=0.0,
+        end=10.0,
+        segment_type="music",
+        energy=0.8,
+        beat_aligned=True,
+        bars=4,
+    )
+    assert seg.clip_name == "clip.mp4"
+    assert seg.end - seg.start == 10.0
+    print("  [OK] SmartSegment works")
+
+
+def test_pipeline_config_defaults():
+    """PipelineConfig defaults are sensible."""
+    cfg = PipelineConfig()
+    assert cfg.smart is False
+    assert cfg.style == "auto"
+    assert cfg.trim_silence is True
+    assert cfg.layout == "2x2"
+    print("  [OK] PipelineConfig defaults OK")
+
+
+def test_pipeline_config_merge():
+    """Pipeline merges config from dict."""
+    cfg = PipelineConfig()
+    pipeline = Pipeline(cfg)
+    pipeline._merge_config({"smart": True, "style": "dynamic", "preset": "youtube"})
+    assert cfg.smart is True
+    assert cfg.style == "dynamic"
+    assert cfg.preset == "youtube"
+    print("  [OK] Pipeline config merge OK")
+
+
+def test_load_json_config():
+    """load_config reads JSON files."""
+    data = {"smart": True, "style": "dynamic", "output_width": 1920}
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(data, f)
+        path = f.name
+    result = load_config(path)
+    Path(path).unlink(missing_ok=True)
+    assert result.get("smart") is True
+    assert result.get("style") == "dynamic"
+    print("  [OK] load_config JSON works")
+
+
 def test_cli_help():
     """CLI --help works."""
     result = subprocess.run(
@@ -70,11 +133,9 @@ def test_cli_help():
         cwd=Path(__file__).parent.parent,
     )
     assert result.returncode == 0
-    assert "auto" in result.stdout
-    assert "sync" in result.stdout
-    assert "compose" in result.stdout
-    assert "analyze" in result.stdout
-    print("  [OK] CLI --help works (commands: auto, sync, compose, analyze)")
+    for cmd in ["auto", "smart", "sync", "compose", "analyze", "config", "clean"]:
+        assert cmd in result.stdout
+    print("  [OK] CLI --help shows all commands")
 
 
 def test_cli_auto_help():
@@ -90,6 +151,33 @@ def test_cli_auto_help():
     print("  [OK] CLI auto --help works")
 
 
+def test_cli_smart_help():
+    """CLI smart --help shows options."""
+    result = subprocess.run(
+        [sys.executable, "cli/main.py", "smart", "--help"],
+        capture_output=True, text=True,
+        cwd=Path(__file__).parent.parent,
+    )
+    assert result.returncode == 0
+    assert "--style" in result.stdout
+    assert "--trim-silence" in result.stdout
+    print("  [OK] CLI smart --help works")
+
+
+def test_cli_config_template():
+    """CLI config --template prints template."""
+    result = subprocess.run(
+        [sys.executable, "cli/main.py", "config", "--template"],
+        capture_output=True, text=True,
+        cwd=Path(__file__).parent.parent,
+    )
+    assert result.returncode == 0
+    assert "output_path" in result.stdout
+    assert "layout" in result.stdout
+    assert "clips" in result.stdout
+    print("  [OK] CLI config --template works")
+
+
 if __name__ == "__main__":
     print("=" * 50)
     print("GuitarMultiCam Studio - Test Suite")
@@ -102,8 +190,15 @@ if __name__ == "__main__":
         test_composition_config,
         test_sync_manager_init,
         test_composer_init,
+        test_smart_composer_init,
+        test_smart_segment,
+        test_pipeline_config_defaults,
+        test_pipeline_config_merge,
+        test_load_json_config,
         test_cli_help,
         test_cli_auto_help,
+        test_cli_smart_help,
+        test_cli_config_template,
     ]
 
     passed = 0

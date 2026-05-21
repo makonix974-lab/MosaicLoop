@@ -189,7 +189,7 @@ def print_groups(groups: list):
         print(f"\n[folder] Group {group['group_id']} — ~{group['count']} clips, ~{group['duration_approx']}s, energy={group['energy_approx']:.4f}")
         print("-" * 40)
         for clip in group['clips']:
-            print(f"  • {clip['name']}")
+            print(f"  - {clip['name']}")
             print(f"    Path: {clip['path']}")
             print(f"    Duration: {clip['duration']:.1f}s, Energy: {clip['energy']:.4f}")
     
