@@ -15,7 +15,7 @@ FOLDER = "D:/Rush Cam A52s/Last Shot Guitar/Same same"
 def main():
     analyzer = VideoAnalyzer()
     
-    print("🎸 GuitarMultiCam Video Analyzer — Same Same Test")
+    print("[guitar] GuitarMultiCam Video Analyzer — Same Same Test")
     print("=" * 60)
     
     # Batch analyze all clips
@@ -23,21 +23,21 @@ def main():
     
     # Match clips
     print("\n" + "=" * 60)
-    print("🔗 Matching clips by audio similarity...")
+    print("[link] Matching clips by audio similarity...")
     matched = analyzer.match_clips(results)
     
     # Print detailed segment analysis for first clip
     if results:
         print("\n" + "=" * 60)
-        print("📋 SEGMENT DETAILS (first clip):")
+        print("[clipboard] SEGMENT DETAILS (first clip):")
         print("-" * 40)
         first_clip = results[0]
         if first_clip.audio and first_clip.audio.segments:
             for i, seg in enumerate(first_clip.audio.segments[:15]):  # First 15 segments
                 duration = seg['end'] - seg['start']
-                beat_aligned = "🎵" if seg.get('beat_aligned') else "  "
+                beat_aligned = "[music]" if seg.get('beat_aligned') else "  "
                 bars = f"({seg.get('bars', 0)} bars)" if 'bars' in seg else ""
-                print(f"  {beat_aligned}[{i+1:2d}] {seg['start']:6.1f}s → {seg['end']:6.1f}s | {duration:5.1f}s | {seg['type']:8s} {bars}")
+                print(f"  {beat_aligned}[{i+1:2d}] {seg['start']:6.1f}s -> {seg['end']:6.1f}s | {duration:5.1f}s | {seg['type']:8s} {bars}")
             if len(first_clip.audio.segments) > 15:
                 print(f"  ... and {len(first_clip.audio.segments) - 15} more segments")
         else:
@@ -46,7 +46,7 @@ def main():
         # Show scene detection if available
         if first_clip.video and first_clip.video.scene_changes:
             print("\n" + "-" * 40)
-            print(f"🎬 SCENE CHANGES ({len(first_clip.video.scene_changes)} detected):")
+            print(f"[video] SCENE CHANGES ({len(first_clip.video.scene_changes)} detected):")
             for i, scene in enumerate(first_clip.video.scene_changes[:10]):
                 print(f"  [{i+1:2d}] {scene['time']:6.1f}s | {scene['type']:6s} | {scene['duration']:.1f}s duration")
             if len(first_clip.video.scene_changes) > 10:
@@ -56,7 +56,7 @@ def main():
     
     # Print summary with segment counts
     print("\n" + "=" * 60)
-    print("📊 SUMMARY:")
+    print("[chart] SUMMARY:")
     print("-" * 40)
     
     for clip in results:
@@ -76,7 +76,7 @@ def main():
     output = "D:/Powerfull/GuitarMultiCamStudio/same_same_analysis.json"
     analyzer.export_analysis(results, output)
     
-    print(f"\n✅ Analysis complete! Results: {output}")
+    print(f"\n[OK] Analysis complete! Results: {output}")
 
 if __name__ == '__main__':
     main()

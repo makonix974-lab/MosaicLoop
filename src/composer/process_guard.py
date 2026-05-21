@@ -78,7 +78,7 @@ class ProcessGuard:
         pids = ProcessGuard.load_pids()
         for name, pid in pids.items():
             if ProcessGuard.is_pid_alive(pid):
-                print(f"   ⚠️  Zombie: {name} (PID {pid}) — kill...")
+                print(f"   [ZOMBIE] {name} (PID {pid}) — kill...")
                 ProcessGuard.kill_pid(pid, force=True)
                 killed.append((name, pid))
         
@@ -97,7 +97,7 @@ class ProcessGuard:
                             pid_str = parts[1].strip().strip('"')
                             if pid_str.isdigit():
                                 pid = int(pid_str)
-                                print(f"   ⚠️  FFmpeg errant: PID {pid} — kill...")
+                                print(f"   [ZOMBIE] FFmpeg errant: PID {pid} — kill...")
                                 ProcessGuard.kill_pid(pid, force=True)
                                 killed.append(('ffmpeg', pid))
             except (subprocess.TimeoutExpired, OSError):
@@ -110,16 +110,16 @@ class ProcessGuard:
                 for line in result.stdout.strip().split('\n'):
                     if line.strip().isdigit():
                         pid = int(line.strip())
-                        print(f"   ⚠️  FFmpeg errant: PID {pid} — kill...")
+                        print(f"   [ZOMBIE] FFmpeg errant: PID {pid} — kill...")
                         ProcessGuard.kill_pid(pid, force=True)
                         killed.append(('ffmpeg', pid))
             except (subprocess.TimeoutExpired, OSError):
                 pass
         
         if killed:
-            print(f"   ✅ {len(killed)} processus nettoyé(s)")
+            print(f"   [OK] {len(killed)} processus nettoye(s)")
         else:
-            print("   ✅ Aucun zombie")
+            print("   [OK] Aucun zombie")
         
         # Clear lock file
         ProcessGuard.save_pids({})
@@ -181,7 +181,7 @@ def _cleanup_on_exit():
 
 def signal_handler(signum, frame):
     """Handle SIGTERM/SIGINT by cleaning up children first."""
-    print(f"\n   ⚠️  Signal {signum} reçu, nettoyage...")
+    print(f"\n   [WARN]  Signal {signum} reçu, nettoyage...")
     ProcessGuard.cleanup_stale()
     exit(128 + signum)
 
@@ -198,7 +198,7 @@ if __name__ == "__main__":
     import sys
     
     if len(sys.argv) > 1 and sys.argv[1] == "clean":
-        print("🔍 Nettoyage des processus zombies...")
+        print("[Clean] Nettoyage des processus zombies...")
         killed = ProcessGuard.cleanup_stale()
         
         # Also look for any ffmpeg processes
@@ -210,7 +210,7 @@ if __name__ == "__main__":
             )
             out = result.stdout or ''
             if 'ffmpeg' in out.lower():
-                print("   🧟 FFmpeg processes still running:")
+                print("   [Zombie] FFmpeg processes still running:")
                 for line in out.split('\n')[1:]:
                     if 'ffmpeg' in line.lower():
                         print(f"      {line.strip()}")
@@ -220,9 +220,9 @@ if __name__ == "__main__":
                 ['pgrep', '-a', 'ffmpeg'], capture_output=True, text=True
             )
             if result.stdout.strip():
-                print(f"   🧟 FFmpeg encore en vie:\n{result.stdout}")
+                print(f"   [Zombie] FFmpeg encore en vie:\n{result.stdout}")
         
         if not killed:
-            print("   ✅ Rien à nettoyer")
+            print("   [OK] Rien à nettoyer")
     else:
         print("Usage: python process_guard.py clean")

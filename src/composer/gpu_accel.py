@@ -121,9 +121,9 @@ def add_hwaccel(cmd: list, gpu_info: dict, input_index: int = 0) -> list:
 # Auto-detect at module load
 GPU_INFO = detect_gpu()
 if GPU_INFO['available']:
-    print(f"   🚀 GPU: {GPU_INFO['name']} — {GPU_INFO['encoder']} disponible")
+    print(f"   [GPU] {GPU_INFO['name']} — {GPU_INFO['encoder']} disponible")
 else:
-    print(f"   💻 CPU mode: {GPU_INFO['reason']}")
+    print(f"   [CPU] mode: {GPU_INFO['reason']}")
 
 
 if __name__ == "__main__":

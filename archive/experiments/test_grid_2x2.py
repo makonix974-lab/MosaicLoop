@@ -17,7 +17,7 @@ ProcessGuard.cleanup_stale()
 subprocess.run(['taskkill', '/F', '/IM', 'ffmpeg.exe'], capture_output=True)
 
 # Step 1: Clean old proxies (they have no audio) + regen
-print("📦 Generating proxies WITH audio...")
+print("[package] Generating proxies WITH audio...")
 import shutil
 shutil.rmtree(f"{FOLDER}/_proxy", ignore_errors=True)
 
@@ -28,7 +28,7 @@ proxy_mgr = ProxyManager(ProxyConfig(
 
 videos = sorted(Path(FOLDER).glob("*.mp4"))[:4]
 proxies = proxy_mgr.batch_generate([str(v) for v in videos], show_progress=True)
-print(f"   ✅ {len(proxies)} proxies with audio")
+print(f"   [OK] {len(proxies)} proxies with audio")
 
 # Step 3: Simple clip wrapper
 class GridClip:
@@ -43,7 +43,7 @@ class GridClip:
 grid_clips = [GridClip(p[1]) for p in proxies]
 
 # Step 4: 2x2 grid with audio
-print("\n🎬 Rendering 2x2 grid...")
+print("\n[video] Rendering 2x2 grid...")
 config = CompositionConfig(
     output_path=str(OUTPUT_DIR / "grid_2x2_audio.mp4"),
     output_width=1920, output_height=1080,
@@ -53,8 +53,8 @@ composer = VideoComposer(config)
 result = composer.compose_grid(grid_clips, show_progress=True, audio_source=0)
 
 if result.get('success'):
-    print(f"\n   ✅ Grid 2x2 créé !")
-    print(f"   📁 {result['output_path']}")
-    print(f"   📺 {result['grid']}, {result['clips_used']} clips")
+    print(f"\n   [OK] Grid 2x2 créé !")
+    print(f"   [folder] {result['output_path']}")
+    print(f"   [tv] {result['grid']}, {result['clips_used']} clips")
 else:
-    print(f"\n   ❌ {result.get('error')}")
+    print(f"\n   [FAIL] {result.get('error')}")

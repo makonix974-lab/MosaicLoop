@@ -20,7 +20,7 @@ CLIPS = [
 def main():
     analyzer = VideoAnalyzer()
     
-    print("🎸 GuitarMultiCam Video Analyzer — Test Run")
+    print("[guitar] GuitarMultiCam Video Analyzer — Test Run")
     print("=" * 60)
     
     results = []
@@ -35,7 +35,7 @@ def main():
         # Print key findings
         if analysis.audio:
             audio = analysis.audio
-            print(f"\n  📊 Audio Analysis:")
+            print(f"\n  [chart] Audio Analysis:")
             print(f"     Duration: {audio.duration:.1f}s")
             print(f"     BPM: {audio.bpm:.1f}")
             print(f"     Key: {audio.key}")
@@ -46,20 +46,20 @@ def main():
             
             # Show segments
             if audio.segments:
-                print(f"\n  🎵 Segments found: {len(audio.segments)}")
+                print(f"\n  [music] Segments found: {len(audio.segments)}")
                 for j, seg in enumerate(audio.segments):
-                    print(f"     [{j+1}] {seg['start']:.1f}s → {seg['end']:.1f}s | {seg['type']} | energy={seg['energy_avg']:.4f}")
+                    print(f"     [{j+1}] {seg['start']:.1f}s -> {seg['end']:.1f}s | {seg['type']} | energy={seg['energy_avg']:.4f}")
     
     # Match clips
     print("\n" + "=" * 60)
-    print("🔗 Matching clips by audio similarity...")
+    print("[link] Matching clips by audio similarity...")
     matched = analyzer.match_clips(results)
     
     # Export
     output = "D:/Powerfull/GuitarMultiCamStudio/test_analysis.json"
     analyzer.export_analysis(results, output)
     
-    print("\n✅ Analysis complete!")
+    print("\n[OK] Analysis complete!")
     print(f"   Results saved: {output}")
 
 if __name__ == '__main__':

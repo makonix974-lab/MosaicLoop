@@ -1,112 +1,121 @@
-#!/usr/bin/env python3
-"""
-Test suite for GuitarMultiCam Studio
-"""
+"""Test suite for GuitarMultiCam Studio."""
 
 import sys
+import subprocess
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from sync.audio_sync import load_audio, find_offset, extract_features
-from composer.video_composer import VideoComposer
+from sync.audio_sync import SyncManager
+from composer.video_composer import VideoComposer, CompositionConfig
+from composer.proxy import ProxyManager, ProxyConfig
+from composer.gpu_accel import detect_gpu, GPU_INFO
 
 
 def test_imports():
-    """Test that all modules can be imported."""
-    print("Testing imports...")
+    """All modules import without error."""
     from sync import audio_sync
-    from composer import video_composer
-    print("  ✓ All modules imported successfully")
+    from composer import video_composer, proxy, gpu_accel, process_guard
+    from analyzer import video_analyzer
+    print("  [OK] All modules imported")
 
 
-def test_audio_sync():
-    """Test audio sync on sample files if available."""
-    print("\nTesting audio sync...")
-    
-    # Look for test files
-    test_dir = Path(__file__).parent.parent / 'tests' / 'fixtures'
-    
-    if not test_dir.exists():
-        print("  ⚠ No test fixtures found. Create tests/fixtures/ with sample audio files.")
-        return
-    
-    audio_files = list(test_dir.glob('*.wav')) + list(test_dir.glob('*.mp3'))
-    
-    if len(audio_files) < 2:
-        print("  ⚠ Need at least 2 audio files for testing")
-        return
-    
-    master = audio_files[0]
-    clip = audio_files[1]
-    
-    print(f"  Master: {master.name}")
-    print(f"  Clip: {clip.name}")
-    
-    master_audio, sr = load_audio(str(master))
-    clip_audio, _ = load_audio(str(clip))
-    
-    result = find_offset(clip_audio, master_audio, sr)
-    
-    print(f"  Offset: {result['offset_seconds']:.3f}s")
-    print(f"  Confidence: {result['confidence']:.1%}")
-    print("  ✓ Audio sync test passed")
+def test_gpu_detect():
+    """GPU detection returns consistent result."""
+    info = detect_gpu()
+    assert "available" in info
+    assert "name" in info
+    assert info["available"] == GPU_INFO["available"]
+    print(f"  [OK] GPU: {info['name']} (avail={info['available']})")
 
 
-def test_video_composer():
-    """Test video composer functionality."""
-    print("\nTesting video composer...")
-    
+def test_proxy_config():
+    """ProxyConfig defaults are sensible."""
+    cfg = ProxyConfig()
+    assert cfg.proxy_width == 960
+    assert cfg.proxy_height == 540
+    assert cfg.proxy_crf == 28
+    print("  [OK] ProxyConfig defaults OK")
+
+
+def test_composition_config():
+    """CompositionConfig defaults are sensible."""
+    cfg = CompositionConfig()
+    assert cfg.output_width == 1920
+    assert cfg.output_height == 1080
+    assert cfg.grid_cols == 2
+    assert cfg.grid_rows == 2
+    print("  [OK] CompositionConfig defaults OK")
+
+
+def test_sync_manager_init():
+    """SyncManager initializes without error."""
+    mgr = SyncManager()
+    assert mgr is not None
+    print("  [OK] SyncManager init OK")
+
+
+def test_composer_init():
+    """VideoComposer initializes without error."""
     composer = VideoComposer()
-    
-    # Check FFmpeg
-    if not composer.check_ffmpeg():
-        print("  ⚠ FFmpeg not available. Install FFmpeg to test video composition.")
-        return
-    
-    print(f"  FFmpeg: ✓ Available")
-    print(f"  Layouts: {list(composer.LAYOUTS.keys())}")
-    
-    # Test xstack filter building
-    test_clips = ['clip1.mp4', 'clip2.mp4', 'clip3.mp4', 'clip4.mp4']
-    
-    for layout in ['2x2', '1x2', '2x1']:
-        filter_str = composer.build_xstack_layout(test_clips[:4], layout)
-        print(f"  Layout {layout}: {filter_str[:60]}...")
-    
-    print("  ✓ Video composer test passed")
+    assert composer is not None
+    print("  [OK] VideoComposer init OK")
 
 
 def test_cli_help():
-    """Test CLI help command."""
-    print("\nTesting CLI...")
-    
-    import subprocess
+    """CLI --help works."""
     result = subprocess.run(
-        [sys.executable, 'cli/main.py', '--help'],
-        capture_output=True,
-        text=True,
-        cwd=Path(__file__).parent.parent
+        [sys.executable, "cli/main.py", "--help"],
+        capture_output=True, text=True,
+        cwd=Path(__file__).parent.parent,
     )
-    
-    if result.returncode == 0:
-        print("  ✓ CLI help works")
-        print("  Commands:", [line.strip() for line in result.stdout.split('\n') if line.startswith('  ')])
-    else:
-        print("  ⚠ CLI test failed")
+    assert result.returncode == 0
+    assert "auto" in result.stdout
+    assert "sync" in result.stdout
+    assert "compose" in result.stdout
+    assert "analyze" in result.stdout
+    print("  [OK] CLI --help works (commands: auto, sync, compose, analyze)")
 
 
-if __name__ == '__main__':
+def test_cli_auto_help():
+    """CLI auto --help shows options."""
+    result = subprocess.run(
+        [sys.executable, "cli/main.py", "auto", "--help"],
+        capture_output=True, text=True,
+        cwd=Path(__file__).parent.parent,
+    )
+    assert result.returncode == 0
+    assert "--clips" in result.stdout
+    assert "--preset" in result.stdout
+    print("  [OK] CLI auto --help works")
+
+
+if __name__ == "__main__":
     print("=" * 50)
     print("GuitarMultiCam Studio - Test Suite")
     print("=" * 50)
-    
-    test_imports()
-    test_audio_sync()
-    test_video_composer()
-    test_cli_help()
-    
-    print("\n" + "=" * 50)
-    print("Tests completed!")
-    print("=" * 50)
+
+    tests = [
+        test_imports,
+        test_gpu_detect,
+        test_proxy_config,
+        test_composition_config,
+        test_sync_manager_init,
+        test_composer_init,
+        test_cli_help,
+        test_cli_auto_help,
+    ]
+
+    passed = 0
+    failed = 0
+    for test in tests:
+        try:
+            test()
+            passed += 1
+        except Exception as e:
+            print(f"  [FAIL] {test.__name__}: {e}")
+            failed += 1
+
+    print(f"\n{'=' * 50}")
+    print(f"Results: {passed} passed, {failed} failed, {len(tests)} total")
+    print(f"{'=' * 50}")

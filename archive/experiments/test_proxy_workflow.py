@@ -22,13 +22,13 @@ def main():
     OUTPUT_DIR = Path(__file__).parent.parent / "output"
     OUTPUT_DIR.mkdir(exist_ok=True)
     
-    print("🎬 Proxy Workflow Test")
+    print("[video] Proxy Workflow Test")
     print("=" * 60)
     
     # =============================================
     # STEP 1: Generate proxies
     # =============================================
-    print("\n📦 STEP 1: Downscale to proxy (960x540)")
+    print("\n[package] STEP 1: Downscale to proxy (960x540)")
     print("-" * 40)
     
     video_files = sorted(Path(FOLDER).glob("*.mp4"))[:4]  # 4 clips for quick test
@@ -44,12 +44,12 @@ def main():
     proxy_mgr = ProxyManager(proxy_config)
     
     proxy_results = proxy_mgr.batch_generate([str(f) for f in video_files])
-    print(f"\n   ✅ {len(proxy_results)} proxies created")
+    print(f"\n   [OK] {len(proxy_results)} proxies created")
     
     # =============================================
     # STEP 2: Analyze proxies (fast!)
     # =============================================
-    print("\n🎯 STEP 2: Analyze proxy clips")
+    print("\n[target] STEP 2: Analyze proxy clips")
     print("-" * 40)
     
     analyzer = VideoAnalyzer()
@@ -65,7 +65,7 @@ def main():
     # =============================================
     # STEP 3: Compose on proxy
     # =============================================
-    print("\n🔗 STEP 3: Compose on proxy")
+    print("\n[link] STEP 3: Compose on proxy")
     print("-" * 40)
     
     composer = VideoComposer(CompositionConfig(
@@ -77,15 +77,15 @@ def main():
     result = composer.compose(proxy_clips)
     
     if result.get('success'):
-        print(f"   ✅ Proxy composition: {result['total_segments']} segments")
-        print(f"   ⏱️  Duration: {result['total_duration']:.1f}s")
+        print(f"   [OK] Proxy composition: {result['total_segments']} segments")
+        print(f"   [timer]  Duration: {result['total_duration']:.1f}s")
     else:
-        print(f"   ❌ Error: {result.get('error', 'unknown')}")
+        print(f"   [FAIL] Error: {result.get('error', 'unknown')}")
     
     # =============================================
     # STEP 4: Build EDL
     # =============================================
-    print("\n📋 STEP 4: Build Edit Decision List")
+    print("\n[clipboard] STEP 4: Build Edit Decision List")
     print("-" * 40)
     
     edl = EditDecisionList()
@@ -115,13 +115,13 @@ def main():
     
     edl_path = OUTPUT_DIR / "edl_test.json"
     edl.export(str(edl_path))
-    print(f"   ✅ EDL saved: {edl_path}")
-    print(f"   📊 {len(edl.segments)} edits, {edl.get_total_duration():.1f}s total")
+    print(f"   [OK] EDL saved: {edl_path}")
+    print(f"   [chart] {len(edl.segments)} edits, {edl.get_total_duration():.1f}s total")
     
     # =============================================
     # STEP 5 (Optional): Export with full-res sources
     # =============================================
-    print("\n🎬 STEP 5: Apply EDL to full-resolution sources")
+    print("\n[video] STEP 5: Apply EDL to full-resolution sources")
     print("-" * 40)
     
     # Map proxy paths to source paths for the EDL
@@ -148,14 +148,14 @@ def main():
     )
     
     if export_result.get('success'):
-        print(f"\n   ✅ FINAL VIDEO: {export_result['output_path']}")
+        print(f"\n   [OK] FINAL VIDEO: {export_result['output_path']}")
     else:
-        print(f"\n   ⚠️ Skipped (use --full for this step)")
+        print(f"\n   [!] Skipped (use --full for this step)")
         print(f"   Set show_progress=True or run manually")
     
     print("\n" + "=" * 60)
-    print("✅ Proxy workflow test complete!")
-    print(f"📁 Output: {OUTPUT_DIR}")
+    print("[OK] Proxy workflow test complete!")
+    print(f"[folder] Output: {OUTPUT_DIR}")
 
 
 if __name__ == "__main__":

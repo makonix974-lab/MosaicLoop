@@ -272,7 +272,7 @@ class VideoComposer:
                                     if ms > 0:
                                         pct = min(ms / (total_duration * 1_000_000) * 100, 100)
                                         if pct - last_pct >= 2 or pct >= 100:
-                                            bars = '█' * int(pct/5) + '░' * (20 - int(pct/5))
+                                            bars = '#' * int(pct/5) + '.' * (20 - int(pct/5))
                                             print(f"\r   [{bars}] {pct:.0f}%", end='', flush=True)
                                             last_pct = pct
                     except (OSError, ValueError):
@@ -282,7 +282,7 @@ class VideoComposer:
                 
                 process.wait()
                 guard.untrack(process.pid)
-                print(f"\r   [████████████████████] 100%")
+                print(f"\r   [####################] 100%")
                 returncode = process.returncode
             else:
                 result = subprocess.run(cmd, capture_output=True, text=True)
@@ -385,7 +385,7 @@ class VideoComposer:
                                 if ms > 0:
                                     pct = min(ms / (total_duration * 1_000_000) * 100, 99.9)
                                     if pct - last_pct >= 2:
-                                        bars = '█' * int(pct/5) + '░' * (20 - int(pct/5))
+                                        bars = '#' * int(pct/5) + '.' * (20 - int(pct/5))
                                         print(f"\r   [{bars}] {pct:.0f}%", end='', flush=True)
                                         last_pct = pct
                 except (OSError, ValueError):
@@ -394,7 +394,7 @@ class VideoComposer:
             
             process.wait()
             guard.untrack(process.pid)
-            print(f"\r   [████████████████████] 100%")
+            print(f"\r   [####################] 100%")
             returncode = process.returncode
         
         # Cleanup progress file

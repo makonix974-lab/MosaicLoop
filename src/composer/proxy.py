@@ -69,7 +69,7 @@ class ProxyManager:
                 except OSError:
                     pass
         
-        print(f"   Downscaling: {video_path.name} → {output_path.name}")
+        print(f"   Downscaling: {video_path.name} -> {output_path.name}")
         
         cmd = [
             self.ffmpeg, '-y',
@@ -118,7 +118,7 @@ class ProxyManager:
                             if ms > 0:
                                 pct = min(ms / (duration * 1_000_000) * 100, 99.9)
                                 if pct - last_pct >= 5:
-                                    bars = '█' * int(pct / 5) + '░' * (20 - int(pct / 5))
+                                    bars = '#' * int(pct / 5) + '.' * (20 - int(pct / 5))
                                     print(f"\r   [{bars}] {pct:.0f}%", end='', flush=True)
                                     last_pct = pct
             except (OSError, ValueError):
@@ -127,7 +127,7 @@ class ProxyManager:
         
         process.wait()
         guard.untrack(process.pid)
-        print(f"\r   [████████████████████] 100%")
+        print(f"\r   [####################] 100%")
         
         # Cleanup progress file
         try:
@@ -173,10 +173,10 @@ class ProxyManager:
                     results[idx] = (video_paths[idx], proxy_path)
                     if show_progress:
                         name = Path(video_paths[idx]).name
-                        print(f"   ✅ [{idx+1}/{len(video_paths)}] {name}")
+                        print(f"   [OK] [{idx+1}/{len(video_paths)}] {name}")
                 except Exception as e:
                     if show_progress:
-                        print(f"   ❌ [{idx+1}/{len(video_paths)}] {Path(video_paths[idx]).name}: {e}")
+                        print(f"   [FAIL] [{idx+1}/{len(video_paths)}] {Path(video_paths[idx]).name}: {e}")
         
         # Filter out None results (failed)
         results = [r for r in results if r is not None]
@@ -250,12 +250,12 @@ class ProxyManager:
                     duration = info['duration']
                     pct = min(out_time_ms / (duration * 1_000_000) * 100, 99.9)
                     if pct - last_pct >= 5:
-                        bars = '█' * int(pct / 5) + '░' * (20 - int(pct / 5))
+                        bars = '#' * int(pct / 5) + '.' * (20 - int(pct / 5))
                         print(f"\r   [{bars}] {pct:.0f}%", end='', flush=True)
                         last_pct = pct
         
         process.wait()
-        print(f"\r   [████████████████████] 100%")
+        print(f"\r   [####################] 100%")
         
         return str(output_path)
     
@@ -441,12 +441,12 @@ class ExportEngine:
                 if out_time_ms > 0 and total_duration > 0:
                     pct = min(out_time_ms / (total_duration * 1_000_000) * 100, 99.9)
                     if pct - last_pct >= 1:
-                        bars = '█' * int(pct / 5) + '░' * (20 - int(pct / 5))
+                        bars = '#' * int(pct / 5) + '.' * (20 - int(pct / 5))
                         print(f"\r   [{bars}] {pct:.0f}%", end='', flush=True)
                         last_pct = pct
         
         stderr = process.stderr.read()
-        print(f"\r   [████████████████████] 100%")
+        print(f"\r   [####################] 100%")
         
         return {
             'returncode': process.returncode,

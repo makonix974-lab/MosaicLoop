@@ -17,19 +17,19 @@ def main():
     OUTPUT_DIR = Path(__file__).parent.parent / "output"
     OUTPUT_DIR.mkdir(exist_ok=True)
     
-    print("🎬 GuitarMultiCam Video Composer — Test")
+    print("[video] GuitarMultiCam Video Composer — Test")
     print("=" * 60)
     
     # Load previous analysis
     analysis_path = Path(__file__).parent.parent / "same_same_analysis.json"
     
     if analysis_path.exists():
-        print(f"📂 Loading analysis from {analysis_path}")
+        print(f"[folder] Loading analysis from {analysis_path}")
         with open(analysis_path, 'r') as f:
             data = json.load(f)
         print(f"   Loaded {data['total_clips']} clips")
     else:
-        print("❌ No analysis found. Run analyzer first!")
+        print("[FAIL] No analysis found. Run analyzer first!")
         return
     
     # Create composition config
@@ -54,17 +54,17 @@ def main():
         clip = analyzer.analyze_clip(clip_data['path'])
         clips.append(clip)
     
-    print(f"\n🎞️ Composing video from {len(clips)} clips...")
+    print(f"\n[film] Composing video from {len(clips)} clips...")
     print("-" * 40)
     
     # Method 1: Linear composition (sequential segments)
-    print("\n📹 Linear Composition:")
+    print("\n[camera] Linear Composition:")
     result = composer.compose(clips)
     
     if result.get('success'):
-        print(f"   ✅ Created: {result['output_path']}")
-        print(f"   📊 Segments: {result['total_segments']}")
-        print(f"   ⏱️ Duration: {result['total_duration']:.1f}s")
+        print(f"   [OK] Created: {result['output_path']}")
+        print(f"   [chart] Segments: {result['total_segments']}")
+        print(f"   [timer] Duration: {result['total_duration']:.1f}s")
         
         # Show segment breakdown
         print("\n   Segment plan:")
@@ -74,22 +74,22 @@ def main():
         if len(result['segments']) > 10:
             print(f"   ... and {len(result['segments']) - 10} more segments")
     else:
-        print(f"   ❌ Error: {result.get('error', 'Unknown error')}")
+        print(f"   [FAIL] Error: {result.get('error', 'Unknown error')}")
     
     # Method 2: Grid composition (2x2)
-    print("\n📊 Grid Composition (2x2):")
+    print("\n[chart] Grid Composition (2x2):")
     grid_output = OUTPUT_DIR / "composition_grid.mp4"
     grid_result = composer.compose_grid(clips, str(grid_output))
     
     if grid_result.get('success'):
-        print(f"   ✅ Created: {grid_result['output_path']}")
-        print(f"   📺 Clips used: {grid_result['clips_used']}")
+        print(f"   [OK] Created: {grid_result['output_path']}")
+        print(f"   [tv] Clips used: {grid_result['clips_used']}")
     else:
-        print(f"   ❌ Error: {grid_result.get('error', 'Unknown error')}")
+        print(f"   [FAIL] Error: {grid_result.get('error', 'Unknown error')}")
     
     print("\n" + "=" * 60)
-    print("✅ Composition test complete!")
-    print(f"📁 Output: {OUTPUT_DIR}")
+    print("[OK] Composition test complete!")
+    print(f"[folder] Output: {OUTPUT_DIR}")
 
 
 if __name__ == "__main__":

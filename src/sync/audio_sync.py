@@ -5,8 +5,8 @@ Sync Manager — Multi-cam audio alignment via onset envelope cross-correlation.
 Stratégie :
 1. Extraire l'audio WAV de chaque clip (FFmpeg)
 2. Calculer l'enveloppe d'onset (librosa onset_strength)
-   → capture le rythme, pas le timbre → robuste à des micros différents
-3. Cross-corrélation entre toutes les paires → matrice d'offsets
+   -> capture le rythme, pas le timbre -> robuste à des micros différents
+3. Cross-corrélation entre toutes les paires -> matrice d'offsets
 4. Choisir le clip référence (meilleur score de confiance)
 5. Aligner tous les clips sur la référence
 6. Appliquer les offsets (trim/pad via FFmpeg)
@@ -147,7 +147,7 @@ class SyncManager:
         Returns:
             AlignmentResult with offsets and confidence
         """
-        print(f"🎯 Alignement de {len(clip_paths)} clips...")
+        print(f"[Sync] Alignement de {len(clip_paths)} clips...")
         
         # Extract audio + compute onset envelopes
         envelopes = []
@@ -187,7 +187,7 @@ class SyncManager:
             offsets[name] = result['offset_seconds']
             confidences.append(result['confidence'])
             
-            status = "✅" if result['confidence'] > 0.3 else "⚠️"
+            status = "[OK]" if result['confidence'] > 0.3 else "[WARN]"
             print(f"   {status} {name}: offset={result['offset_seconds']:.3f}s "
                   f"conf={result['confidence']:.0%}")
         
@@ -278,7 +278,7 @@ class SyncManager:
             }
         
         edl.export(output_edl)
-        print(f"   📋 EDL exporté: {output_edl}")
+        print(f"   [EDL] EDL exporté: {output_edl}")
         
         return alignment
 
@@ -290,7 +290,7 @@ if __name__ == "__main__":
         clips = sys.argv[1:]
         sync = SyncManager()
         result = sync.align_clips(clips)
-        print(f"\n📊 Résultat: confiance moyenne {result.confidence:.0%}")
+        print(f"\n[Result] Résultat: confiance moyenne {result.confidence:.0%}")
         print(f"   Référence: {result.reference_id}")
         for name, offset in result.offsets.items():
             print(f"   {name}: {offset:+.3f}s")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pipeline complète : Proxy → Sync → Grid synchronisé"""
+"""Pipeline complète : Proxy -> Sync -> Grid synchronisé"""
 import sys, time, subprocess
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -17,25 +17,25 @@ ProcessGuard.cleanup_stale()
 subprocess.run(['taskkill', '/F', '/IM', 'ffmpeg.exe'], capture_output=True)
 
 videos = sorted(Path(FOLDER).glob("*.mp4"))[:4]
-print(f"🎬 Pipeline: {len(videos)} clips")
+print(f"[video] Pipeline: {len(videos)} clips")
 print("=" * 50)
 
 # 1. Proxy (parallèle)
-print("\n📦 Proxy (parallel)")
+print("\n[package] Proxy (parallel)")
 t0 = time.time()
 mgr = ProxyManager(ProxyConfig(proxy_width=960, proxy_height=540, proxy_crf=30))
 proxies = mgr.batch_generate([str(v) for v in videos], max_workers=4)
-print(f"   ⏱️  {time.time()-t0:.1f}s")
+print(f"   [timer]  {time.time()-t0:.1f}s")
 
 # 2. Sync audio (trouve les offsets)
-print("\n🎯 Sync (source audio → offsets)")
+print("\n[target] Sync (source audio -> offsets)")
 t0 = time.time()
 sync = SyncManager()
 alignment = sync.align_clips([str(v) for v in videos])
-print(f"   ⏱️  {time.time()-t0:.1f}s")
+print(f"   [timer]  {time.time()-t0:.1f}s")
 
 # 3. Appliquer offsets aux proxies (pad + trim)
-print("\n🔄 Apply offsets to proxies")
+print("\n[refresh] Apply offsets to proxies")
 t0 = time.time()
 min_offset = min(alignment.offsets.values())
 synced_proxies = []
@@ -69,10 +69,10 @@ for src_path, proxy_path in proxies:
     subprocess.run(cmd, capture_output=True, text=True)
     synced_proxies.append(str(out_path))
 
-print(f"   ⏱️  {time.time()-t0:.1f}s")
+print(f"   [timer]  {time.time()-t0:.1f}s")
 
 # 4. Grid 2x2 sur proxies synchronisés
-print("\n🔲 Grid 2x2 (synced!)")
+print("\n[button] Grid 2x2 (synced!)")
 t0 = time.time()
 
 class ClipWrap:
@@ -89,6 +89,6 @@ composer = VideoComposer(config)
 grid_clips = [ClipWrap(p) for p in synced_proxies]
 result = composer.compose_grid(grid_clips, show_progress=True, audio_source=0)
 
-print(f"\n{'✅' if result.get('success') else '❌'} Grid: {result.get('output_path', result.get('error'))}")
-print(f"⏱️  Total: {time.time()-t0:.1f}s")
+print(f"\n{'[OK]' if result.get('success') else '[FAIL]'} Grid: {result.get('output_path', result.get('error'))}")
+print(f"[timer]  Total: {time.time()-t0:.1f}s")
 print(f"\n{'='*50}\nFini!")

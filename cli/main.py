@@ -1,172 +1,178 @@
-#!/usr/bin/env python3
 """
-GuitarMultiCam CLI
-Command-line interface for video sync and compose.
-"""
+GuitarMultiCam CLI — Command-line interface for video sync and composition.
 
-import click
-import json
-from pathlib import Path
-from tqdm import tqdm
+Usage:
+  guitarcam auto --clips *.mp4 --output final.mp4
+  guitarcam sync --clips *.mp4
+  guitarcam compose --clips *.mp4 --output final.mp4 --layout 2x2
+  guitarcam analyze --clips *.mp4
+"""
 
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
+from pathlib import Path
 
-from sync.audio_sync import load_audio, find_offset, align_clips_to_master
-from composer.video_composer import VideoComposer
+import click
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from pipeline import Pipeline, PipelineConfig
+from sync.audio_sync import SyncManager
+from composer.video_composer import VideoComposer, CompositionConfig
+from composer.process_guard import ProcessGuard
 
 
 @click.group()
 def cli():
-    """GuitarMultiCam Studio CLI"""
-    pass
+    """GuitarMultiCam Studio — Multi-cam video editing for musicians."""
+    ProcessGuard.cleanup_stale()
 
 
 @cli.command()
-@click.argument('master', type=click.Path(exists=True))
-@click.argument('clips', nargs=-1, type=click.Path(exists=True))
-@click.option('--output', '-o', type=click.Path(), help='Output JSON file for offsets')
-def sync(master, clips, output):
-    """Analyze audio and find optimal sync offsets for clips."""
-    click.echo(f"Master: {master}")
-    click.echo(f"Clips: {len(clips)}")
-    
-    clips_info = [{'path': str(c)} for c in clips]
-    
-    click.echo("\nAnalyzing audio alignment...")
-    results = []
-    
-    master_audio, sr = load_audio(master)
-    
-    for clip_path in tqdm(clips, desc="Processing clips"):
-        clip_audio, _ = load_audio(clip_path)
-        result = find_offset(clip_audio, master_audio, sr)
-        results.append({
-            'path': str(clip_path),
-            'offset_seconds': result['offset_seconds'],
-            'confidence': result['confidence']
-        })
-        click.echo(f"  {Path(clip_path).name}: {result['offset_seconds']:.3f}s (conf: {result['confidence']:.1%})")
-    
-    if output:
-        with open(output, 'w') as f:
-            json.dump(results, f, indent=2)
-        click.echo(f"\n✓ Offsets saved to {output}")
-    else:
-        click.echo(json.dumps(results, indent=2))
-
-
-@cli.command()
-@click.argument('clips', nargs=-1, type=click.Path(exists=True))
-@click.option('--layout', '-l', default='2x2', help='Grid layout (1x1, 1x2, 2x1, 2x2, 3x1)')
-@click.option('--output', '-o', default='output.mp4', help='Output file')
-@click.option('--width', '-w', default=1920, help='Output width')
-@click.option('--height', '-h', default=1080, help='Output height')
-@click.option('--crf', default=23, help='Quality (lower=better, 18-28)')
-def compose(clips, layout, output, width, height, crf):
-    """Compose clips into grid layout."""
-    composer = VideoComposer()
-    
-    if not composer.check_ffmpeg():
-        click.echo("❌ FFmpeg not found! Install ffmpeg and add to PATH.", err=True)
-        return
-    
-    click.echo(f"Composing {len(clips)} clips into {layout} layout...")
-    
-    result = composer.compose(
+@click.option("--clips", "-c", multiple=True, required=True,
+              type=click.Path(exists=True), help="Video files to process")
+@click.option("--output", "-o", default="output/final.mp4",
+              help="Output video path")
+@click.option("--layout", "-l", default="2x2",
+              type=click.Choice(["1x1", "2x1", "1x2", "2x2"]),
+              help="Grid layout")
+@click.option("--preset", "-p", default="",
+              type=click.Choice(["", "youtube", "instagram", "tiktok"]),
+              help="Export preset (overrides --width/--height)")
+@click.option("--width", "-w", default=1920, type=int, help="Output width")
+@click.option("--height", "-h", default=1080, type=int, help="Output height")
+@click.option("--fps", "-f", default=30, type=int, help="Output framerate")
+@click.option("--crf", default=23, type=int,
+              help="Quality (lower=better, 18-28)")
+@click.option("--proxy/--no-proxy", default=True,
+              help="Use proxy for faster processing")
+@click.option("--audio-source", default=0, type=int,
+              help="Index of clip to use as audio source (0=first)")
+@click.option("--workers", default=4, type=int,
+              help="Max parallel workers for proxy generation")
+def auto(clips, output, layout, preset, width, height,
+         fps, crf, proxy, audio_source, workers):
+    """Full pipeline: sync + compose in one command."""
+    cfg = PipelineConfig(
         clips=list(clips),
-        output=output,
+        output_path=output,
         layout=layout,
-        resolution=(width, height),
-        crf=crf
+        use_proxy=proxy,
+        output_width=width,
+        output_height=height,
+        output_fps=fps,
+        output_crf=crf,
+        audio_source=audio_source,
+        preset=preset,
+        max_workers=workers,
     )
-    
-    if result.returncode == 0:
-        click.echo(f"✓ Video saved to {output}")
-    else:
-        click.echo(f"❌ Error: {result.stderr}", err=True)
+    pipeline = Pipeline(cfg)
+    result = pipeline.run()
+
+    if not result.get("success"):
+        click.echo(f"\n[FAIL] {result.get('error', 'Unknown error')}", err=True)
+        raise SystemExit(1)
 
 
 @cli.command()
-@click.argument('offsets_file', type=click.Path(exists=True))
-@click.argument('master_audio', type=click.Path(exists=True))
-@click.option('--layout', '-l', default='2x2', help='Grid layout')
-@click.option('--output', '-o', default='final.mp4', help='Output file')
-def render(offsets_file, master_audio, layout, output):
-    """Render final video using sync offsets and master audio."""
-    with open(offsets_file) as f:
-        clips_offsets = json.load(f)
-    
-    composer = VideoComposer()
-    
-    if not composer.check_ffmpeg():
-        click.echo("❌ FFmpeg not found!", err=True)
-        return
-    
-    click.echo(f"Rendering {len(clips_offsets)} clips with offsets...")
-    
-    result = composer.compose_with_offsets(
-        clips_offsets=clips_offsets,
-        master_audio=master_audio,
-        output=output,
-        layout=layout
-    )
-    
-    if result.returncode == 0:
-        click.echo(f"✓ Final video: {output}")
-    else:
-        click.echo(f"❌ Error: {result.stderr}", err=True)
+@click.option("--clips", "-c", multiple=True, required=True,
+              type=click.Path(exists=True), help="Video files to sync")
+@click.option("--output", "-o", default="output/offsets.json",
+              help="Output alignment JSON")
+def sync(clips, output):
+    """Analyze audio and find optimal sync offsets for clips."""
+    sync_mgr = SyncManager()
+    alignment = sync_mgr.align_clips(list(clips))
+
+    click.echo(f"\nReference: {alignment.reference_id}")
+    click.echo(f"Confidence: {alignment.confidence:.1%}")
+    for name, offset in alignment.offsets.items():
+        click.echo(f"  {name}: {offset:+.3f}s")
+
+    import json
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
+    with open(output, "w") as f:
+        json.dump({
+            "offsets": alignment.offsets,
+            "confidence": alignment.confidence,
+            "reference": alignment.reference_id,
+        }, f, indent=2)
+    click.echo(f"\n[OK] Offsets saved to {output}")
 
 
 @cli.command()
-@click.argument('master', type=click.Path(exists=True))
-@click.argument('clips', nargs=-1, type=click.Path(exists=True))
-@click.option('--layout', '-l', default='2x2', help='Grid layout')
-@click.option('--output', '-o', default='final.mp4', help='Output file')
-def auto(master, clips, layout, output):
-    """Full pipeline: sync + render in one command."""
-    import tempfile
-    import os
-    
-    click.echo("🎸 GuitarMultiCam Auto Pipeline")
-    click.echo("=" * 40)
-    
-    # Step 1: Sync
-    click.echo("\n[1/2] Analyzing audio sync...")
-    clips_info = [{'path': str(c)} for c in clips]
-    
-    master_audio, sr = load_audio(master)
-    offsets = []
-    
-    for clip_path in clips:
-        clip_audio, _ = load_audio(clip_path)
-        result = find_offset(clip_audio, master_audio, sr)
-        offsets.append({
-            'path': str(clip_path),
-            'offset_seconds': result['offset_seconds'],
-            'confidence': result['confidence']
-        })
-    
-    # Step 2: Render
-    click.echo("\n[2/2] Composing video...")
-    composer = VideoComposer()
-    
-    if not composer.check_ffmpeg():
-        click.echo("❌ FFmpeg not found!", err=True)
-        return
-    
-    result = composer.compose_with_offsets(
-        clips_offsets=offsets,
-        master_audio=master,
-        output=output,
-        layout=layout
+@click.option("--clips", "-c", multiple=True, required=True,
+              type=click.Path(exists=True), help="Video files to compose")
+@click.option("--output", "-o", default="output/composition.mp4",
+              help="Output video path")
+@click.option("--layout", "-l", default="2x2",
+              type=click.Choice(["1x1", "2x1", "1x2", "2x2"]),
+              help="Grid layout")
+@click.option("--audio-source", default=0, type=int,
+              help="Index of clip to use as audio source (0=first)")
+@click.option("--crf", default=23, type=int,
+              help="Quality (lower=better, 18-28)")
+def compose(clips, output, layout, audio_source, crf):
+    """Compose multiple clips into a grid layout (must be pre-synced)."""
+    cols, rows = (int(x) for x in layout.split("x"))
+    cell_w = 1920 // cols
+    cell_h = 1080 // rows
+
+    config = CompositionConfig(
+        output_path=output,
+        grid_cols=cols,
+        grid_rows=rows,
+        grid_cell_width=cell_w,
+        grid_cell_height=cell_h,
+        output_crf=crf,
     )
-    
-    if result.returncode == 0:
-        click.echo(f"\n✅ Done! Video saved to {output}")
+
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
+
+    class ClipWrap:
+        def __init__(self, path):
+            self.path = path
+            self.name = Path(path).name
+            self.audio = type("a", (), {"duration": 0})()
+
+    composer = VideoComposer(config)
+    grid_clips = [ClipWrap(c) for c in clips]
+    result = composer.compose_grid(grid_clips, show_progress=True,
+                                   audio_source=audio_source)
+
+    if result.get("success"):
+        click.echo(f"\n[OK] Video saved to {output}")
     else:
-        click.echo(f"\n❌ Error: {result.stderr}", err=True)
+        click.echo(f"\n[FAIL] {result.get('error', 'Unknown error')}", err=True)
+        raise SystemExit(1)
 
 
-if __name__ == '__main__':
+@cli.command()
+@click.option("--clips", "-c", multiple=True, required=True,
+              type=click.Path(exists=True), help="Video files to analyze")
+@click.option("--output", "-o", default="output/analysis.json",
+              help="Output analysis JSON")
+def analyze(clips, output):
+    """Analyze video clips for audio and scene features."""
+    cfg = PipelineConfig(clips=list(clips))
+    pipeline = Pipeline(cfg)
+    result = pipeline.analyze()
+
+    if result.get("success"):
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
+        import json
+        with open(output, "w") as f:
+            json.dump(result["clips"], f, indent=2)
+        click.echo(f"\n[OK] Analysis saved to {output}")
+    else:
+        click.echo(f"\n[FAIL] Analysis failed", err=True)
+
+
+@cli.command()
+def clean():
+    """Kill lingering ffmpeg processes (cleanup)."""
+    ProcessGuard.cleanup_stale()
+    click.echo("[OK] Done")
+
+
+if __name__ == "__main__":
     cli()

@@ -13,17 +13,17 @@ OUTPUT_DIR = Path(__file__).parent.parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # STEP 1: Proxies 900p
-print("📦 Step 1: Proxies 900p")
+print("[package] Step 1: Proxies 900p")
 proxy_mgr = ProxyManager(ProxyConfig(
     proxy_width=1600, proxy_height=900,
     proxy_preset="ultrafast", proxy_crf=28
 ))
 videos = sorted(Path(FOLDER).glob("*.mp4"))[:2]
 proxies = proxy_mgr.batch_generate([str(v) for v in videos], show_progress=True)
-print(f"   ✅ {len(proxies)} proxies")
+print(f"   [OK] {len(proxies)} proxies")
 
 # STEP 2: Analyze FROM SOURCE (audio)
-print("\n🎯 Step 2: Analyse audio")
+print("\n[target] Step 2: Analyse audio")
 analyzer = VideoAnalyzer()
 all_clips = []
 for src_path, proxy_path in proxies:
@@ -37,7 +37,7 @@ for src_path, proxy_path in proxies:
     print(f"   {all_clips[-1]['name']}: BPM {features.bpm:.0f}, {len(features.segments)} segs ({time.time()-t0:.0f}s)")
 
 # STEP 3: Compose DIRECTLY on proxies (900p output, no full-res re-encode)
-print("\n🔗 Step 3: Composition 900p")
+print("\n[link] Step 3: Composition 900p")
 composer = VideoComposer(CompositionConfig(
     output_path=str(OUTPUT_DIR / "proxy_900p_final.mp4"),
     output_width=1920, output_height=1080,
@@ -63,8 +63,8 @@ for c in all_clips:
 
 result = composer.compose(proxy_clips, show_progress=True)
 if result.get('success'):
-    print(f"   ✅ {result['total_segments']} segments, {result['total_duration']:.0f}s")
+    print(f"   [OK] {result['total_segments']} segments, {result['total_duration']:.0f}s")
 else:
-    print(f"   ❌ {result.get('error')}")
+    print(f"   [FAIL] {result.get('error')}")
 
-print("\n✅ Test terminé !")
+print("\n[OK] Test terminé !")

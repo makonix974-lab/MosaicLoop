@@ -12,14 +12,14 @@ OUTPUT_DIR = Path(__file__).parent.parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # STEP 1: Generate proxies (540p)
-print("📦 Step 1: Generate proxies")
+print("[package] Step 1: Generate proxies")
 proxy_mgr = ProxyManager(ProxyConfig(proxy_width=960, proxy_height=540, proxy_preset="ultrafast", proxy_crf=28))
 videos = sorted(Path(FOLDER).glob("*.mp4"))[:2]  # 2 clips for speed
 proxies = proxy_mgr.batch_generate([str(v) for v in videos])
-print(f"   ✅ {len(proxies)} proxies")
+print(f"   [OK] {len(proxies)} proxies")
 
 # STEP 2: Analyze proxies (fast)
-print("\n🎯 Step 2: Analyze proxies")
+print("\n[target] Step 2: Analyze proxies")
 analyzer = VideoAnalyzer()
 proxy_clips = []
 for src, proxy in proxies:
@@ -28,7 +28,7 @@ for src, proxy in proxies:
     proxy_clips.append(clip)
 
 # STEP 3: Build EDL from segments
-print("\n📋 Step 3: Build Edit Decision List")
+print("\n[clipboard] Step 3: Build Edit Decision List")
 edl = EditDecisionList()
 for src, proxy in proxies:
     edl.add_source(src)
@@ -40,12 +40,12 @@ for clip in proxy_clips:
 
 edl_path = OUTPUT_DIR / "edl_test_v2.json"
 edl.export(str(edl_path))
-print(f"   ✅ {len(edl.segments)} edits, {edl.get_total_duration():.1f}s")
+print(f"   [OK] {len(edl.segments)} edits, {edl.get_total_duration():.1f}s")
 
 # STEP 4: Export from full-res sources
-print("\n🎬 Step 4: Export full-res from EDL")
+print("\n[video] Step 4: Export full-res from EDL")
 exporter = ExportEngine()
 result = exporter.export_linear(edl, str(OUTPUT_DIR / "final_proxy_test.mp4"))
-print(f"   {'✅' if result.get('success') else '❌'} Output: {result.get('output_path', result.get('error'))}")
+print(f"   {'[OK]' if result.get('success') else '[FAIL]'} Output: {result.get('output_path', result.get('error'))}")
 
-print("\n✅ Proxy workflow complete!")
+print("\n[OK] Proxy workflow complete!")

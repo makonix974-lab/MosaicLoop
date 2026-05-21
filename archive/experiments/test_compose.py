@@ -44,7 +44,7 @@ def get_silence_trim(filepath):
     return start, end
 
 def trim_and_compose():
-    print("🎬 GuitarMultiCam Test Compose 2x2")
+    print("[video] GuitarMultiCam Test Compose 2x2")
     print("=" * 50)
     
     # Step 1: Trim each clip to 30s starting from silence end
@@ -71,13 +71,13 @@ def trim_and_compose():
             output
         ]
         
-        print(f"   Trimming {trim_start:.1f}s → {trim_end:.1f}s")
+        print(f"   Trimming {trim_start:.1f}s -> {trim_end:.1f}s")
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode != 0:
-            print(f"   ❌ Error: {result.stderr[-200:]}")
+            print(f"   [FAIL] Error: {result.stderr[-200:]}")
         else:
-            print(f"   ✅ Saved to {output}")
+            print(f"   [OK] Saved to {output}")
     
     # Step 2: Compose 2x2
     print("\n[5/4] Composing 2x2 grid...")
@@ -102,11 +102,11 @@ def trim_and_compose():
     result = subprocess.run(cmd, capture_output=True, text=True)
     
     if result.returncode == 0:
-        print(f"\n✅ Test video saved: {OUTPUT}")
+        print(f"\n[OK] Test video saved: {OUTPUT}")
         print(f"   Resolution: 1920x1080 (2x2 grid)")
         print(f"   Duration: {DURATION}s")
     else:
-        print(f"\n❌ Compose failed: {result.stderr[-500:]}")
+        print(f"\n[FAIL] Compose failed: {result.stderr[-500:]}")
 
 if __name__ == '__main__':
     trim_and_compose()

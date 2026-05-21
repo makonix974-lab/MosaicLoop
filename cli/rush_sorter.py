@@ -186,7 +186,7 @@ def print_groups(groups: list):
     print("=" * 60)
     
     for group in groups:
-        print(f"\n📁 Group {group['group_id']} — ~{group['count']} clips, ~{group['duration_approx']}s, energy={group['energy_approx']:.4f}")
+        print(f"\n[folder] Group {group['group_id']} — ~{group['count']} clips, ~{group['duration_approx']}s, energy={group['energy_approx']:.4f}")
         print("-" * 40)
         for clip in group['clips']:
             print(f"  • {clip['name']}")
@@ -200,7 +200,7 @@ def save_results(results: list, output_path: str):
     """Save analysis results to JSON."""
     with open(output_path, 'w') as f:
         json.dump(results, f, indent=2)
-    print(f"\n✓ Results saved to {output_path}")
+    print(f"\n[OK] Results saved to {output_path}")
 
 
 if __name__ == '__main__':
@@ -214,7 +214,7 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     
-    print("🎬 Rush Sorter — Audio Waveform Analysis")
+    print("[video] Rush Sorter — Audio Waveform Analysis")
     print("=" * 50)
     
     # Analyze folder

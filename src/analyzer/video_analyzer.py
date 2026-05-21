@@ -843,7 +843,7 @@ class VideoAnalyzerEngine:
         info = self.get_info(video_path)
         duration = info['duration']
         
-        # Simple均匀 sampling
+        # Simple uniform sampling
         timestamps = [duration * i / (count + 1) for i in range(1, count + 1)]
         
         return timestamps
@@ -892,7 +892,7 @@ class VideoAnalyzer:
         analysis = ClipAnalysis(path=str(video_path), name=path.name)
         
         # Get basic video info
-        print(f"\n📹 Analyzing: {path.name}")
+        print(f"\n[Analyzing] {path.name}")
         video_info = self.video.get_info(video_path)
         print(f"   {video_info['width']}x{video_info['height']}, {video_info['fps']:.1f}fps, {video_info['duration']:.1f}s")
         
@@ -952,9 +952,9 @@ class VideoAnalyzer:
                 try:
                     results[idx] = future.result()
                     name = Path(results[idx].name).name if results[idx] else "?"
-                    print(f"   ✅ [{idx+1}/{len(video_paths)}] {name}")
+                    print(f"   [OK] [{idx+1}/{len(video_paths)}] {name}")
                 except Exception as e:
-                    print(f"   ❌ [{idx+1}/{len(video_paths)}] {e}")
+                    print(f"   [FAIL] [{idx+1}/{len(video_paths)}] {e}")
         
         return [r for r in results if r is not None]
     
@@ -985,7 +985,7 @@ class VideoAnalyzer:
                         videos[key] = v
         
         video_list = sorted(videos.values())
-        print(f"\n🎬 Batch Analysis: {len(video_list)} unique videos found")
+        print(f"\n[Film] Batch Analysis: {len(video_list)} unique videos found")
         
         results = []
         for i, video in enumerate(video_list):
@@ -1006,7 +1006,7 @@ class VideoAnalyzer:
         if len(clips) < 2:
             return clips
         
-        print("\n🔗 Matching clips...")
+        print("\n[Match] Matching clips...")
         
         # First pass: group by BPM (primary identifier)
         bpm_groups = {}
@@ -1135,7 +1135,7 @@ class VideoAnalyzer:
         with open(output_path, 'w') as f:
             json.dump(data, f, indent=2, default=str)
         
-        print(f"\n✅ Analysis saved to {output_path}")
+        print(f"\n[OK] Analysis saved to {output_path}")
 
 
 # ============================================================================
