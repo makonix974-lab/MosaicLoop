@@ -54,9 +54,11 @@ def cli():
               help="Index of clip to use as audio source (0=first)")
 @click.option("--workers", default=4, type=int,
               help="Max parallel workers for proxy generation")
+@click.option("--cache/--no-cache", default=True,
+              help="Reuse cached proxies and sync from previous runs")
 @click.option("--config", default="", help="Path to YAML/JSON config file")
 def auto(clips, output, layout, preset, width, height,
-         fps, crf, proxy, audio_source, workers, config):
+         fps, crf, proxy, audio_source, workers, cache, config):
     """Full pipeline: sync + compose in one command (grid mode)."""
     cfg = PipelineConfig(
         clips=list(clips),
@@ -70,6 +72,7 @@ def auto(clips, output, layout, preset, width, height,
         audio_source=audio_source,
         preset=preset,
         max_workers=workers,
+        use_cache=cache,
         config_path=config,
     )
     pipeline = Pipeline(cfg)

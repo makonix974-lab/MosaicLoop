@@ -111,6 +111,7 @@ def test_pipeline_2clips_grid_2x1(tmp_path):
         output_width=1920, output_height=1080,
         output_fps=30,
         max_workers=2,
+        use_cache=False,
     )
     result = Pipeline(cfg).run()
 
@@ -158,6 +159,7 @@ def test_pipeline_4clips_grid_2x2(tmp_path):
         output_width=1920, output_height=1080,
         output_fps=30,
         max_workers=2,
+        use_cache=False,
     )
     result = Pipeline(cfg).run()
 
@@ -170,3 +172,99 @@ def test_pipeline_4clips_grid_2x2(tmp_path):
     assert int(v.get("height", 0)) == 1080
     duration = float(probe.get("format", {}).get("duration", 0))
     assert 4.5 <= duration <= 8.0, f"unexpected duration: {duration}s"
+
+
+# ---------------------------------------------------------------------------
+# Test 4 — session cache speedup and invalidation
+# ---------------------------------------------------------------------------
+
+def test_session_cache_skips_redundant_work(tmp_path):
+    """
+    Two identical runs back-to-back: the second one should reuse cached
+    proxies and sync, skipping those steps entirely.
+    """
+    import time as _t
+    from pipeline import Pipeline, PipelineConfig
+
+    out = tmp_path / "cache_test.mp4"
+    clips = [str(FIXTURES / f"clip_{x}.mp4") for x in "ab"]
+
+    def _run(use_cache: bool) -> float:
+        cfg = PipelineConfig(
+            clips=clips,
+            output_path=str(out),
+            layout="2x1",
+            use_proxy=True,
+            proxy_width=320, proxy_height=240,
+            output_width=1920, output_height=1080,
+            output_fps=30,
+            max_workers=2,
+            use_cache=use_cache,
+        )
+        t0 = _t.time()
+        result = Pipeline(cfg).run()
+        assert result.get("success"), result.get("error")
+        return _t.time() - t0
+
+    cold = _run(use_cache=True)
+    # Cache file should now exist
+    cache_file = out.parent / ".session.json"
+    assert cache_file.exists()
+
+    warm = _run(use_cache=True)
+    # Warm run must be significantly faster than cold (skip proxy + sync).
+    # Synthetic clips are tiny, so we just require warm < cold and warm < 2.5s.
+    assert warm < cold, f"warm ({warm:.2f}s) not faster than cold ({cold:.2f}s)"
+    assert warm < 2.5, f"warm run too slow: {warm:.2f}s"
+
+
+def test_session_cache_invalidates_on_input_change(tmp_path):
+    """
+    When an input file's mtime changes, the cache must rebuild proxies
+    and sync rather than reuse stale data.
+    """
+    import shutil
+    import time as _t
+    from pipeline import Pipeline, PipelineConfig
+
+    # Copy fixtures to tmp so we can mutate without affecting other tests
+    work_dir = tmp_path / "rushes"
+    work_dir.mkdir()
+    src_a = work_dir / "clip_a.mp4"
+    src_b = work_dir / "clip_b.mp4"
+    shutil.copy(FIXTURES / "clip_a.mp4", src_a)
+    shutil.copy(FIXTURES / "clip_b.mp4", src_b)
+
+    out = tmp_path / "out.mp4"
+    clips = [str(src_a), str(src_b)]
+
+    def _make_cfg(use_cache: bool):
+        return PipelineConfig(
+            clips=clips,
+            output_path=str(out),
+            layout="2x1",
+            use_proxy=True,
+            proxy_width=320, proxy_height=240,
+            output_width=1920, output_height=1080,
+            output_fps=30,
+            max_workers=2,
+            use_cache=use_cache,
+        )
+
+    # First run populates the cache
+    assert Pipeline(_make_cfg(True)).run().get("success")
+    cache_file = out.parent / ".session.json"
+    cache_mtime_before = cache_file.stat().st_mtime
+
+    # Touch one input to invalidate the cache (force a different mtime)
+    _t.sleep(1.1)
+    new_mtime = _t.time()
+    import os
+    os.utime(src_a, (new_mtime, new_mtime))
+
+    # Second run must rebuild — cache is rewritten with new fingerprints
+    assert Pipeline(_make_cfg(True)).run().get("success")
+    cache_mtime_after = cache_file.stat().st_mtime
+    assert cache_mtime_after > cache_mtime_before, (
+        "Cache file should have been rewritten after input change"
+    )

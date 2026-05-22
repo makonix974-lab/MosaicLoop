@@ -17,6 +17,7 @@ from composer.video_composer import VideoComposer, CompositionConfig
 from composer.proxy import ProxyManager, ProxyConfig
 from composer.process_guard import ProcessGuard
 from models import Clip
+from cache import SessionCache, CachedAlignment
 
 
 @dataclass
@@ -34,6 +35,7 @@ class PipelineConfig:
     audio_source: int = 0
     preset: str = ""  # youtube, instagram, tiktok
     max_workers: int = 4
+    use_cache: bool = True
     config_path: str = ""
 
 
@@ -95,8 +97,54 @@ class Pipeline:
         print(f"\n== GuitarMultiCam Pipeline == {n} clips -> grid")
         print("=" * 50)
 
-        proxies = self._step_proxy(cfg)
-        alignment = self._step_sync(cfg, proxies)
+        # Try to load session cache (skip redundant proxy/sync work)
+        cache: SessionCache = SessionCache()
+        cache_valid = False
+        if cfg.use_cache:
+            existing = SessionCache.load(cfg.output_path)
+            if existing and existing.fingerprints_match(cfg.clips):
+                cache = existing
+                cache_valid = True
+                print("[Cache] Inputs unchanged — reusing proxies and sync")
+            else:
+                if existing:
+                    print("[Cache] Inputs changed — full rebuild")
+                cache.update_fingerprints(cfg.clips)
+        else:
+            print("[Cache] Disabled (--no-cache)")
+            cache.update_fingerprints(cfg.clips)
+
+        # Step 1: proxies
+        if cache_valid and cache.proxies_intact():
+            proxies = cache.get_proxies_in_order(cfg.clips)
+            print(f"\n[1/3] Proxy generation — cached ({len(proxies)} proxies)")
+        else:
+            proxies = self._step_proxy(cfg)
+            cache.update_proxies(proxies)
+
+        # Step 2: sync
+        if cache_valid and cache.has_valid_alignment() and cache.proxies_intact():
+            cached = cache.alignment
+            alignment = AlignmentResult(
+                offsets=dict(cached.offsets),
+                confidence=cached.confidence,
+                reference_id=cached.reference_id,
+            )
+            print(f"\n[2/3] Audio sync — cached "
+                  f"(confidence: {alignment.confidence:.0%}, ref: {alignment.reference_id})")
+        else:
+            alignment = self._step_sync(cfg, proxies)
+            cache.update_alignment(alignment)
+
+        # Persist cache before compose (so a compose failure doesn't
+        # invalidate the proxy/sync work we just did)
+        if cfg.use_cache:
+            try:
+                cache.save(cfg.output_path)
+            except OSError as e:
+                print(f"[Cache] Could not write cache: {e}")
+
+        # Step 3: compose (always runs — fast, no caching benefit)
         result = self._step_compose_synced(cfg, proxies, alignment)
 
         elapsed = time.time() - start
