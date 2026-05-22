@@ -253,10 +253,13 @@ class VideoComposer:
             # Build FFmpeg command
             cmd = [self.ffmpeg, '-y', '-f', 'concat', '-safe', '0', '-i', concat_list_path]
             
+            audio_filters = []
             if self.config.audio_normalize:
-                cmd.extend(['-af', 'loudnorm=I=-16:TP=-1.5:LRA=11'])
+                audio_filters.append('loudnorm=I=-16:TP=-1.5:LRA=11')
             if self.config.audio_gain != 1.0:
-                cmd.extend(['-af', f'volume={self.config.audio_gain}'])
+                audio_filters.append(f'volume={self.config.audio_gain}')
+            if audio_filters:
+                cmd.extend(['-af', ','.join(audio_filters)])
             
             cmd.extend(['-c:v', self.config.output_codec, '-preset', self.config.output_preset,
                         '-crf', str(self.config.output_crf), '-r', str(self.config.output_fps),

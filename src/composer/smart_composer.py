@@ -370,10 +370,6 @@ class SmartComposer(VideoComposer):
                 "-i", concat_path,
             ]
 
-            # Audio crossfade between cuts if duration allows
-            if total_duration > 10:
-                cmd += ["-af", "acrossfade=d=0.1,volume=1.5"]
-
             cmd += [
                 "-c:v", self.config.output_codec,
                 "-preset", self.config.output_preset,
