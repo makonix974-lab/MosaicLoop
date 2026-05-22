@@ -4,6 +4,24 @@ import { Metronome } from "./metronome.js";
 
 const $ = (id) => document.getElementById(id);
 
+// ---------- On-screen debug log (so we can see errors on mobile) ----------
+
+function debugLog(...parts) {
+  const card = $("debug-card");
+  const pre  = $("debug-log");
+  if (!card || !pre) return;
+  card.hidden = false;
+  const ts = new Date().toLocaleTimeString();
+  pre.textContent = `[${ts}] ${parts.join(" ")}\n` + pre.textContent;
+}
+
+window.addEventListener("error", (e) => {
+  debugLog("ERROR:", e.message, "@", e.filename + ":" + e.lineno);
+});
+window.addEventListener("unhandledrejection", (e) => {
+  debugLog("UNHANDLED:", String(e.reason && e.reason.message || e.reason));
+});
+
 // ---------- Capability checks (from M0) ----------
 
 function setStatus(id, text, level = "") {
@@ -455,6 +473,18 @@ function setLoopMode(mode) {
 }
 
 async function onArmLoop() {
+  debugLog("Arm clicked. armed=", looperState.armed, "stream=", !!recState.stream);
+  try {
+    await _onArmLoop();
+  } catch (err) {
+    debugLog("Arm threw:", err && err.message);
+    setLoopStatus(`Arm error: ${err && err.message}`, "bad");
+    looperState.armed = false;
+    setLoopMode("idle");
+  }
+}
+
+async function _onArmLoop() {
   if (looperState.armed) return;
   if (!recState.stream) {
     setLoopStatus("Enable the camera first.", "warn");
