@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass, asdict
 from .process_guard import ProcessGuard
 from .gpu_accel import GPU_INFO, add_hwaccel
+from utils.ffmpeg_run import run_ffmpeg
 
 
 @dataclass
@@ -94,52 +95,14 @@ class ProxyManager:
         cmd += [af, str(self.config.proxy_crf)]
         
         cmd += ['-c:a', 'aac', '-b:a', '64k', str(output_path)]
-        
-        # Progress via FILE (pas de pipe — thread crash)
-        import tempfile
-        progress_path = tempfile.NamedTemporaryFile(suffix='.progress', delete=False).name
-        cmd.extend(['-progress', progress_path])
-
-        # Stderr to file to avoid pipe deadlock when buffer fills up
-        stderr_path = tempfile.NamedTemporaryFile(suffix='.stderr', delete=False).name
-        stderr_file = open(stderr_path, 'w', encoding='utf-8', errors='replace')
-
-        # Run sans pipes
-        guard = ProcessGuard(f"proxy_{video_path.stem}")
-        process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=stderr_file)
-        guard.track(process.pid, f"proxy_{video_path.stem}")
 
         info = self.get_info(str(video_path))
         duration = info['duration']
 
-        last_pct = 0
-        while process.poll() is None:
-            try:
-                with open(progress_path, 'r', errors='replace') as pf:
-                    for line in pf.read().split('\n'):
-                        if 'out_time_ms=' in line:
-                            ms = int(line.split('=')[1].strip())
-                            if ms > 0:
-                                pct = min(ms / (duration * 1_000_000) * 100, 99.9)
-                                if pct - last_pct >= 5:
-                                    bars = '#' * int(pct / 5) + '.' * (20 - int(pct / 5))
-                                    print(f"\r   [{bars}] {pct:.0f}%", end='', flush=True)
-                                    last_pct = pct
-            except (OSError, ValueError):
-                pass
-            time.sleep(0.5)
+        result = run_ffmpeg(cmd, total_duration=duration, show_progress=True, timeout=600)
 
-        process.wait()
-        stderr_file.close()
-        guard.untrack(process.pid)
-        print(f"\r   [####################] 100%")
-
-        # Cleanup temp files
-        for p in (progress_path, stderr_path):
-            try:
-                Path(p).unlink(missing_ok=True)
-            except OSError:
-                pass
+        if not result.success:
+            raise RuntimeError(f"Proxy generation failed: {result.short_error}")
 
         return str(output_path)
     

@@ -20,6 +20,7 @@ from typing import Optional
 import shutil
 from .process_guard import ProcessGuard
 from .gpu_accel import GPU_INFO
+from utils.ffmpeg_run import run_ffmpeg
 
 
 @dataclass
@@ -232,27 +233,22 @@ class VideoComposer:
         return plan
     
     def _execute_composition(self, plan: list, clips: list, show_progress: bool = True) -> dict:
-        """Execute composition plan via FFmpeg concat. Progress via FILE (no pipes)."""
+        """Execute composition plan via FFmpeg concat demuxer."""
         if not plan:
-            return {'error': 'Empty composition plan'}
-        
-        # Create concat list
-        import tempfile
+            return {'success': False, 'error': 'Empty composition plan'}
+
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
             concat_list_path = f.name
-        
-        result = {'success': False, 'error': 'Unknown error'}
-        
+
         try:
             with open(concat_list_path, 'w') as f:
                 for segment in plan:
                     f.write(f"file '{segment['clip_path']}'\n")
                     f.write(f"inpoint {segment['clip_start']:.3f}\n")
                     f.write(f"outpoint {segment['clip_end']:.3f}\n")
-            
-            # Build FFmpeg command
+
             cmd = [self.ffmpeg, '-y', '-f', 'concat', '-safe', '0', '-i', concat_list_path]
-            
+
             audio_filters = []
             if self.config.audio_normalize:
                 audio_filters.append('loudnorm=I=-16:TP=-1.5:LRA=11')
@@ -260,98 +256,39 @@ class VideoComposer:
                 audio_filters.append(f'volume={self.config.audio_gain}')
             if audio_filters:
                 cmd.extend(['-af', ','.join(audio_filters)])
-            
+
             cmd.extend(['-c:v', self.config.output_codec, '-preset', self.config.output_preset,
                         '-crf', str(self.config.output_crf), '-r', str(self.config.output_fps),
                         '-c:a', 'aac', '-b:a', '192k'])
             cmd.append(self.config.output_path)
-            
-            # Progress via FILE (not pipe) — évite les thread crashes
-            progress_path = tempfile.NamedTemporaryFile(suffix='.progress', delete=False).name
-            cmd.extend(['-progress', progress_path])
-            
+
+            total_duration = sum(s['duration'] for s in plan)
+
             if show_progress:
                 print("   Encoding video...")
                 ProcessGuard.cleanup_stale()
 
-                # Stderr to file to avoid pipe deadlock when buffer fills up
-                stderr_path = tempfile.NamedTemporaryFile(suffix='.stderr', delete=False).name
-                stderr_file = open(stderr_path, 'w', encoding='utf-8', errors='replace')
+            result = run_ffmpeg(
+                cmd,
+                total_duration=total_duration,
+                show_progress=show_progress,
+                timeout=1800,
+            )
 
-                guard = ProcessGuard("composition")
-                process = subprocess.Popen(
-                    cmd, stdout=subprocess.DEVNULL, stderr=stderr_file, text=True
-                )
-                guard.track(process.pid, "composition")
-
-                total_duration = sum(s['duration'] for s in plan)
-                last_pct = 0
-
-                while process.poll() is None:
-                    try:
-                        with open(progress_path, 'r', errors='replace') as pf:
-                            for line in pf.read().split('\n'):
-                                if 'out_time_ms=' in line:
-                                    ms = int(line.split('=')[1].strip())
-                                    if ms > 0:
-                                        pct = min(ms / (total_duration * 1_000_000) * 100, 100)
-                                        if pct - last_pct >= 2 or pct >= 100:
-                                            bars = '#' * int(pct/5) + '.' * (20 - int(pct/5))
-                                            print(f"\r   [{bars}] {pct:.0f}%", end='', flush=True)
-                                            last_pct = pct
-                    except (OSError, ValueError):
-                        pass
-                    import time
-                    time.sleep(0.5)
-
-                process.communicate()
-                stderr_file.close()
-                guard.untrack(process.pid)
-                print(f"\r   [####################] 100%")
-                returncode = process.returncode
-
-                # Read stderr from file only if there was an error
-                stderr = ''
-                if returncode != 0:
-                    try:
-                        with open(stderr_path, 'r', encoding='utf-8', errors='replace') as f:
-                            stderr = f.read()
-                    except OSError:
-                        pass
-
-                # Cleanup stderr file
-                try:
-                    Path(stderr_path).unlink(missing_ok=True)
-                except OSError:
-                    pass
-            else:
-                result = subprocess.run(cmd, capture_output=True, text=True)
-                returncode = result.returncode
-                stderr = result.stderr
-            
-            # Cleanup progress file
-            try:
-                Path(progress_path).unlink(missing_ok=True)
-            except:
-                pass
-            
-            if returncode == 0:
-                total_duration = sum(s['duration'] for s in plan)
-                result = {
+            if result.success:
+                return {
                     'success': True,
                     'output_path': self.config.output_path,
                     'total_segments': len(plan),
                     'total_duration': total_duration,
-                    'segments': plan
+                    'segments': plan,
                 }
-            else:
-                err_msg = self._extract_ffmpeg_error(stderr) if stderr else "FFmpeg error"
-                result = {'success': False, 'error': f'FFmpeg exit code {returncode}: {err_msg}'}
-        
+            return {
+                'success': False,
+                'error': f'FFmpeg exit code {result.returncode}: {result.short_error}',
+            }
         finally:
             Path(concat_list_path).unlink(missing_ok=True)
-        
-        return result
     
     def compose_grid(self, clips: list, output_path: str = None, 
                      show_progress: bool = True, audio_source: int = 0) -> dict:
@@ -388,7 +325,7 @@ class VideoComposer:
         
         # Audio: re-encode to AAC
         cmd.extend(['-c:a', 'aac', '-b:a', '128k'])
-        
+
         # Video encoding (force output FPS to avoid encoding source framerate)
         cmd.extend([
             '-c:v', self.config.output_codec,
@@ -396,92 +333,38 @@ class VideoComposer:
             '-crf', str(self.config.output_crf),
             '-r', str(self.config.output_fps)
         ])
-        
-        # Progress via FILE (pas de pipe)
-        import tempfile
-        progress_path = tempfile.NamedTemporaryFile(suffix='.progress', delete=False).name
-        cmd.extend(['-progress', progress_path])
+
         cmd.append(self.config.output_path)
-        
+
+        total_duration = max(
+            (c.audio.duration if hasattr(c, 'audio') and c.audio else
+             getattr(c, 'duration', 0)) for c in selected_clips
+        )
+        if not total_duration or total_duration <= 0:
+            total_duration = 200
+
         if show_progress:
             print("   Rendering 2x2 grid...")
             ProcessGuard.cleanup_stale()
 
-            # Redirect stderr to file to avoid deadlock (buffer filling up)
-            stderr_path = tempfile.NamedTemporaryFile(suffix='.stderr', delete=False).name
-            stderr_file = open(stderr_path, 'w', encoding='utf-8', errors='replace')
+        result = run_ffmpeg(
+            cmd,
+            total_duration=total_duration,
+            show_progress=show_progress,
+            timeout=1800,
+        )
 
-            guard = ProcessGuard("grid")
-            process = subprocess.Popen(
-                cmd, stdout=subprocess.DEVNULL, stderr=stderr_file, text=True
-            )
-            guard.track(process.pid, "grid")
-
-            total_duration = max(
-                (c.audio.duration if hasattr(c, 'audio') and c.audio else
-                 getattr(c, 'duration', 0)) for c in selected_clips
-            )
-            if not total_duration or total_duration <= 0:
-                total_duration = 200
-
-            last_pct = 0
-            while process.poll() is None:
-                try:
-                    with open(progress_path, 'r', errors='replace') as pf:
-                        for line in pf.read().split('\n'):
-                            if 'out_time_ms=' in line:
-                                ms = int(line.split('=')[1].strip())
-                                if ms > 0:
-                                    pct = min(ms / (total_duration * 1_000_000) * 100, 99.9)
-                                    if pct - last_pct >= 2:
-                                        bars = '#' * int(pct/5) + '.' * (20 - int(pct/5))
-                                        print(f"\r   [{bars}] {pct:.0f}%", end='', flush=True)
-                                        last_pct = pct
-                except (OSError, ValueError):
-                    pass
-                time.sleep(0.5)
-
-            process.communicate()
-            stderr_file.close()
-            guard.untrack(process.pid)
-            print(f"\r   [####################] 100%")
-            returncode = process.returncode
-            
-            # Read stderr from file if needed
-            stderr = ''
-            if returncode != 0:
-                try:
-                    with open(stderr_path, 'r', encoding='utf-8', errors='replace') as f:
-                        stderr = f.read()
-                except OSError:
-                    pass
-            
-            # Cleanup stderr file
-            try:
-                Path(stderr_path).unlink(missing_ok=True)
-            except OSError:
-                pass
-        else:
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            returncode = result.returncode
-            stderr = result.stderr
-
-        # Cleanup progress file
-        try:
-            Path(progress_path).unlink(missing_ok=True)
-        except OSError:
-            pass
-
-        if returncode == 0:
+        if result.success:
             return {
                 'success': True,
                 'output_path': self.config.output_path,
                 'clips_used': max_clips,
                 'grid': f'{self.config.grid_cols}x{self.config.grid_rows}',
             }
-        else:
-            err_msg = self._extract_ffmpeg_error(stderr) if stderr else "FFmpeg error"
-            return {'success': False, 'error': f'FFmpeg exit code {returncode}: {err_msg}'}
+        return {
+            'success': False,
+            'error': f'FFmpeg exit code {result.returncode}: {result.short_error}',
+        }
     
     def _build_grid_filter(self, clips: list) -> str:
         """
