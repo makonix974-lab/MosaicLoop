@@ -12,10 +12,54 @@
 <body>
   <header>
     <h1>MosaicLoop</h1>
-    <p class="tag">M1 — recorder · <span id="app-version">v0.0.4-m1c</span></p>
+    <p class="tag">M2 — recorder + metronome · <span id="app-version">v0.0.5-m2</span></p>
   </header>
 
   <main>
+    <section class="card">
+      <h2>Metronome</h2>
+
+      <div class="metro-display">
+        <div class="metro-leds" id="metro-leds"></div>
+        <div class="metro-bpm">
+          <span id="metro-bpm-val">100</span>
+          <small>BPM</small>
+        </div>
+      </div>
+
+      <div class="metro-row">
+        <label for="metro-bpm">BPM</label>
+        <input type="range" id="metro-bpm" min="40" max="220" step="1" value="100" />
+        <input type="number" id="metro-bpm-num" min="40" max="220" step="1" value="100" />
+      </div>
+
+      <div class="metro-row">
+        <label for="metro-beats">Beats / bar</label>
+        <select id="metro-beats">
+          <option>2</option>
+          <option>3</option>
+          <option selected>4</option>
+          <option>6</option>
+          <option>8</option>
+        </select>
+        <label class="inline">
+          <input type="checkbox" id="metro-accent" checked />
+          Accent on 1
+        </label>
+      </div>
+
+      <div class="metro-row">
+        <label for="metro-vol">Volume</label>
+        <input type="range" id="metro-vol" min="0" max="1" step="0.01" value="0.5" />
+      </div>
+
+      <div class="rec-controls">
+        <button id="metro-toggle">Start metronome</button>
+      </div>
+
+      <p class="muted small">Plug your headphones in: the click is meant
+        for monitoring during recording, not for the room.</p>
+    </section>
     <section class="card">
       <h2>Recorder</h2>
 
