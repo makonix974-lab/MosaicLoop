@@ -281,10 +281,6 @@ class VideoComposer:
                 stderr_chunks = []
 
                 while process.poll() is None:
-                    if process.stderr:
-                        line = process.stderr.readline()
-                        if line:
-                            stderr_chunks.append(line)
                     try:
                         with open(progress_path, 'r', errors='replace') as pf:
                             for line in pf.read().split('\n'):
@@ -301,11 +297,12 @@ class VideoComposer:
                     import time
                     time.sleep(0.5)
 
-                process.wait()
+                # Drain remaining stderr after process exits
+                remaining_stdout, remaining_stderr = process.communicate()
                 guard.untrack(process.pid)
                 print(f"\r   [####################] 100%")
                 returncode = process.returncode
-                stderr = ''.join(stderr_chunks)
+                stderr = remaining_stderr or ''
             else:
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 returncode = result.returncode
@@ -422,6 +419,7 @@ class VideoComposer:
             guard.untrack(process.pid)
             print(f"\r   [####################] 100%")
             returncode = process.returncode
+            stderr = stderr or ''
         else:
             result = subprocess.run(cmd, capture_output=True, text=True)
             returncode = result.returncode

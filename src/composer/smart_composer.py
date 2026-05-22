@@ -394,13 +394,8 @@ class SmartComposer(VideoComposer):
                 cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
             guard.track(process.pid, "smart_compose")
 
-            stderr_chunks = []
             last_pct = 0
             while process.poll() is None:
-                if process.stderr:
-                    line = process.stderr.readline()
-                    if line:
-                        stderr_chunks.append(line)
                 try:
                     with open(progress_path, "r", errors="replace") as pf:
                         for line in pf.read().split("\n"):
@@ -422,7 +417,7 @@ class SmartComposer(VideoComposer):
                 import time
                 time.sleep(0.5)
 
-            process.wait()
+            _, stderr = process.communicate()
             guard.untrack(process.pid)
             print(f"\r   [{"#" * 20}] 100%")
 
@@ -445,8 +440,7 @@ class SmartComposer(VideoComposer):
                     "mode": "smart",
                 }
             else:
-                stderr = ''.join(stderr_chunks)
-                err_line = stderr.strip().split('\n')[-1][:120] if stderr else "FFmpeg error"
+                err_line = (stderr or '').strip().split('\n')[-1][:120] if stderr else "FFmpeg error"
                 return {
                     "success": False,
                     "error": f"FFmpeg exit code {process.returncode}: {err_line}",
