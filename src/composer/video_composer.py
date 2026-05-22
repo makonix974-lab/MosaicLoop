@@ -273,15 +273,19 @@ class VideoComposer:
             if show_progress:
                 print("   Encoding video...")
                 ProcessGuard.cleanup_stale()
+
+                # Stderr to file to avoid pipe deadlock when buffer fills up
+                stderr_path = tempfile.NamedTemporaryFile(suffix='.stderr', delete=False).name
+                stderr_file = open(stderr_path, 'w', encoding='utf-8', errors='replace')
+
                 guard = ProcessGuard("composition")
                 process = subprocess.Popen(
-                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
+                    cmd, stdout=subprocess.DEVNULL, stderr=stderr_file, text=True
                 )
                 guard.track(process.pid, "composition")
 
                 total_duration = sum(s['duration'] for s in plan)
                 last_pct = 0
-                stderr_chunks = []
 
                 while process.poll() is None:
                     try:
@@ -300,12 +304,26 @@ class VideoComposer:
                     import time
                     time.sleep(0.5)
 
-                # Drain remaining stderr after process exits
-                remaining_stdout, remaining_stderr = process.communicate()
+                process.communicate()
+                stderr_file.close()
                 guard.untrack(process.pid)
                 print(f"\r   [####################] 100%")
                 returncode = process.returncode
-                stderr = remaining_stderr or ''
+
+                # Read stderr from file only if there was an error
+                stderr = ''
+                if returncode != 0:
+                    try:
+                        with open(stderr_path, 'r', encoding='utf-8', errors='replace') as f:
+                            stderr = f.read()
+                    except OSError:
+                        pass
+
+                # Cleanup stderr file
+                try:
+                    Path(stderr_path).unlink(missing_ok=True)
+                except OSError:
+                    pass
             else:
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 returncode = result.returncode

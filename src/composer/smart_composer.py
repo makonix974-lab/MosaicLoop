@@ -386,8 +386,13 @@ class SmartComposer(VideoComposer):
                 suffix=".progress", delete=False).name
             cmd.extend(["-progress", progress_path])
 
+            # Stderr to file to avoid pipe deadlock
+            stderr_path = tempfile.NamedTemporaryFile(
+                suffix=".stderr", delete=False).name
+            stderr_file = open(stderr_path, "w", encoding="utf-8", errors="replace")
+
             process = subprocess.Popen(
-                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+                cmd, stdout=subprocess.DEVNULL, stderr=stderr_file, text=True)
             guard.track(process.pid, "smart_compose")
 
             last_pct = 0
@@ -413,14 +418,27 @@ class SmartComposer(VideoComposer):
                 import time
                 time.sleep(0.5)
 
-            _, stderr = process.communicate()
+            process.communicate()
+            stderr_file.close()
             guard.untrack(process.pid)
-            print(f"\r   [{"#" * 20}] 100%")
+            full_bar = "#" * 20
+            print(f"\r   [{full_bar}] 100%")
 
-            try:
-                Path(progress_path).unlink(missing_ok=True)
-            except OSError:
-                pass
+            # Read stderr from file only if there was an error
+            stderr = ""
+            if process.returncode != 0:
+                try:
+                    with open(stderr_path, "r", encoding="utf-8", errors="replace") as f:
+                        stderr = f.read()
+                except OSError:
+                    pass
+
+            # Cleanup temp files
+            for p in (progress_path, stderr_path):
+                try:
+                    Path(p).unlink(missing_ok=True)
+                except OSError:
+                    pass
 
             if process.returncode == 0:
                 switch_count = sum(

@@ -99,15 +99,19 @@ class ProxyManager:
         import tempfile
         progress_path = tempfile.NamedTemporaryFile(suffix='.progress', delete=False).name
         cmd.extend(['-progress', progress_path])
-        
+
+        # Stderr to file to avoid pipe deadlock when buffer fills up
+        stderr_path = tempfile.NamedTemporaryFile(suffix='.stderr', delete=False).name
+        stderr_file = open(stderr_path, 'w', encoding='utf-8', errors='replace')
+
         # Run sans pipes
         guard = ProcessGuard(f"proxy_{video_path.stem}")
-        process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=stderr_file)
         guard.track(process.pid, f"proxy_{video_path.stem}")
-        
+
         info = self.get_info(str(video_path))
         duration = info['duration']
-        
+
         last_pct = 0
         while process.poll() is None:
             try:
@@ -124,17 +128,19 @@ class ProxyManager:
             except (OSError, ValueError):
                 pass
             time.sleep(0.5)
-        
+
         process.wait()
+        stderr_file.close()
         guard.untrack(process.pid)
         print(f"\r   [####################] 100%")
-        
-        # Cleanup progress file
-        try:
-            Path(progress_path).unlink(missing_ok=True)
-        except:
-            pass
-        
+
+        # Cleanup temp files
+        for p in (progress_path, stderr_path):
+            try:
+                Path(p).unlink(missing_ok=True)
+            except OSError:
+                pass
+
         return str(output_path)
     
     def batch_generate(self, video_paths: list, show_progress: bool = True,
