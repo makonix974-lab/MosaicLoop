@@ -36,19 +36,15 @@ class SyncManager:
     
     def __init__(self):
         self.ffmpeg = 'ffmpeg'
+        # librosa is a hard dependency (see requirements.txt); imported lazily
+        # at first use so the rest of the package can be imported without it.
         self.librosa = None
-    
+
     def _import_librosa(self):
-        """Lazy import librosa."""
+        """Lazy import — librosa is in requirements.txt."""
         if self.librosa is None:
-            try:
-                import librosa
-                self.librosa = librosa
-            except ImportError:
-                print("Installing librosa...")
-                subprocess.run(['pip', 'install', '-q', 'librosa'], check=True)
-                import librosa
-                self.librosa = librosa
+            import librosa
+            self.librosa = librosa
     
     def extract_audio(self, video_path: str, start: float = 0, 
                       duration: float = None) -> tuple:
@@ -198,68 +194,3 @@ class SyncManager:
             confidence=avg_confidence,
             reference_id=ref_name
         )
-    
-    def apply_offsets(self, clip_paths: list[str], alignment: AlignmentResult,
-                      output_dir: str = "output/synced/") -> list[str]:
-        """
-        Apply alignment offsets to clips.
-        Pads or trims each clip so they all start at the same time.
-        
-        Returns: List of paths to synced clips
-        """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        synced_paths = []
-        
-        # Find the earliest start (most negative offset)
-        min_offset = min(alignment.offsets.values())
-        
-        for path_str in clip_paths:
-            path = Path(path_str)
-            name = path.name
-            offset = alignment.offsets.get(name, 0.0)
-            output_path = output_dir / f"synced_{name}"
-            
-            # Relative offset: how much to pad this clip
-            pad_time = offset - min_offset
-            
-            if abs(pad_time) < 0.01:
-                # Almost no adjustment needed, just copy
-                cmd = ['ffmpeg', '-y', '-i', str(path),
-                       '-c', 'copy', str(output_path)]
-            elif pad_time > 0:
-                # Need to pad: add silence at the beginning
-                cmd = ['ffmpeg', '-y',
-                       '-f', 'lavfi', '-t', f'{pad_time:.3f}',
-                       '-i', 'anullsrc=r=48000:cl=stereo',
-                       '-i', str(path),
-                       '-filter_complex', '[0:a][1:a]concat=n=2:v=0:a=1[out]',
-                       '-map', '1:v', '-map', '[out]',
-                       '-c:v', 'copy', '-c:a', 'aac',
-                       '-shortest', str(output_path)]
-            else:
-                # Need to trim: skip the beginning
-                trim_time = -pad_time
-                cmd = ['ffmpeg', '-y', '-ss', f'{trim_time:.3f}',
-                       '-i', str(path),
-                       '-c', 'copy', str(output_path)]
-            
-            subprocess.run(cmd, capture_output=True, text=True)
-            synced_paths.append(str(output_path))
-        
-        return synced_paths
-    
-if __name__ == "__main__":
-    import sys
-    
-    if len(sys.argv) > 1:
-        clips = sys.argv[1:]
-        sync = SyncManager()
-        result = sync.align_clips(clips)
-        print(f"\n[Result] Résultat: confiance moyenne {result.confidence:.0%}")
-        print(f"   Référence: {result.reference_id}")
-        for name, offset in result.offsets.items():
-            print(f"   {name}: {offset:+.3f}s")
-    else:
-        print("Usage: python audio_sync.py clip1.mp4 clip2.mp4 clip3.mp4")

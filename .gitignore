@@ -43,3 +43,8 @@ Thumbs.db
 tests/fixtures/clip_*.mp4
 tests/fixtures/offsets.json
 tests/fixtures/_proxy/
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/
