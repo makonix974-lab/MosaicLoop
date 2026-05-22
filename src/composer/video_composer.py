@@ -65,6 +65,20 @@ class VideoComposer:
             self.config.output_preset = GPU_INFO['encoder_preset']
         self.ffmpeg = 'ffmpeg'
         self.ffprobe = 'ffprobe'
+
+    @staticmethod
+    def _extract_ffmpeg_error(stderr: str) -> str:
+        """Extract the most relevant line from FFmpeg stderr."""
+        if not stderr:
+            return "Unknown FFmpeg error"
+        lines = stderr.strip().split('\n')
+        # Look for the last few error lines
+        error_lines = [l for l in lines if 'error' in l.lower() or 'Invalid' in l or 'No such' in l]
+        if error_lines:
+            return error_lines[-1][:120]
+        # Return last non-empty line
+        meaningful = [l for l in lines if l.strip() and 'Stream mapping' not in l and 'Output' not in l]
+        return (meaningful[-1][:120] if meaningful else lines[-1][:120])
     
     def compose(self, clips: list, segments: list = None, show_progress: bool = True) -> dict:
         """
@@ -257,13 +271,20 @@ class VideoComposer:
                 print("   Encoding video...")
                 ProcessGuard.cleanup_stale()
                 guard = ProcessGuard("composition")
-                process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                process = subprocess.Popen(
+                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
+                )
                 guard.track(process.pid, "composition")
-                
+
                 total_duration = sum(s['duration'] for s in plan)
                 last_pct = 0
-                
+                stderr_chunks = []
+
                 while process.poll() is None:
+                    if process.stderr:
+                        line = process.stderr.readline()
+                        if line:
+                            stderr_chunks.append(line)
                     try:
                         with open(progress_path, 'r', errors='replace') as pf:
                             for line in pf.read().split('\n'):
@@ -279,14 +300,16 @@ class VideoComposer:
                         pass
                     import time
                     time.sleep(0.5)
-                
+
                 process.wait()
                 guard.untrack(process.pid)
                 print(f"\r   [####################] 100%")
                 returncode = process.returncode
+                stderr = ''.join(stderr_chunks)
             else:
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 returncode = result.returncode
+                stderr = result.stderr
             
             # Cleanup progress file
             try:
@@ -304,7 +327,8 @@ class VideoComposer:
                     'segments': plan
                 }
             else:
-                result = {'success': False, 'error': f'FFmpeg exit code {returncode}'}
+                err_msg = self._extract_ffmpeg_error(stderr) if stderr else "FFmpeg error"
+                result = {'success': False, 'error': f'FFmpeg exit code {returncode}: {err_msg}'}
         
         finally:
             Path(concat_list_path).unlink(missing_ok=True)
@@ -363,18 +387,20 @@ class VideoComposer:
         if show_progress:
             print("   Rendering 2x2 grid...")
             ProcessGuard.cleanup_stale()
-            
+
             guard = ProcessGuard("grid")
-            process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            process = subprocess.Popen(
+                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
+            )
             guard.track(process.pid, "grid")
-            
+
             total_duration = max(
-                (c.audio.duration if hasattr(c, 'audio') and c.audio else 
+                (c.audio.duration if hasattr(c, 'audio') and c.audio else
                  getattr(c, 'duration', 0)) for c in selected_clips
             )
             if not total_duration or total_duration <= 0:
                 total_duration = 200
-            
+
             last_pct = 0
             while process.poll() is None:
                 try:
@@ -391,30 +417,32 @@ class VideoComposer:
                 except (OSError, ValueError):
                     pass
                 time.sleep(0.5)
-            
-            process.wait()
+
+            _, stderr = process.communicate()
             guard.untrack(process.pid)
             print(f"\r   [####################] 100%")
             returncode = process.returncode
-        
-        # Cleanup progress file
-        try:
-            Path(progress_path).unlink(missing_ok=True)
-        except:
-            pass
         else:
             result = subprocess.run(cmd, capture_output=True, text=True)
             returncode = result.returncode
-        
+            stderr = result.stderr
+
+        # Cleanup progress file
+        try:
+            Path(progress_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+
         if returncode == 0:
             return {
                 'success': True,
                 'output_path': self.config.output_path,
                 'clips_used': max_clips,
-                'grid': f'{self.config.grid_cols}x{self.config.grid_rows}'
+                'grid': f'{self.config.grid_cols}x{self.config.grid_rows}',
             }
         else:
-            return {'success': False, 'error': 'FFmpeg error (check logs)'}
+            err_msg = self._extract_ffmpeg_error(stderr) if stderr else "FFmpeg error"
+            return {'success': False, 'error': f'FFmpeg exit code {returncode}: {err_msg}'}
     
     def _build_grid_filter(self, clips: list) -> str:
         """

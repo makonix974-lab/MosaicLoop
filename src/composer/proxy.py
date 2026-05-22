@@ -102,7 +102,7 @@ class ProxyManager:
         
         # Run sans pipes
         guard = ProcessGuard(f"proxy_{video_path.stem}")
-        process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         guard.track(process.pid, f"proxy_{video_path.stem}")
         
         info = self.get_info(str(video_path))
