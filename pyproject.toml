@@ -15,19 +15,11 @@ authors = [
 
 dependencies = [
     "numpy>=1.24.0",
-    "scipy>=1.11.0",
-    "soundfile>=0.12.1",
-    "pydub>=0.25.1",
-    "ffmpeg-python>=0.2.0",
-    "click>=8.1.0",
-    "tqdm>=4.65.0",
     "librosa>=0.10.0",
-    "scenedetect>=0.6.1",
-    "opencv-python>=4.8.0",
+    "click>=8.1.0",
 ]
 
 [project.optional-dependencies]
-gui = ["PyQt6>=6.5.0"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1.0"]
 
 [project.scripts]

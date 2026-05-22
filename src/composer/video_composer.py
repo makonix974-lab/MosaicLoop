@@ -409,6 +409,5 @@ class VideoComposer:
             filters.append(f"{row_labels}copy[grid]")
         else:
             filters.append(f"{row_labels}vstack=inputs={n_rows}[grid]")
-        
+
         return ";".join(filters)
-# SmartComposer moved to smart_composer.py

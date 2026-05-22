@@ -250,39 +250,6 @@ class SyncManager:
         
         return synced_paths
     
-    def align_and_export_edl(self, clip_paths: list[str], 
-                              output_edl: str = "output/sync_edl.json",
-                              reference_idx: int = None) -> AlignmentResult:
-        """
-        Align clips and export EDL with sync offsets.
-        """
-        from ..composer.proxy import EditDecisionList
-        
-        alignment = self.align_clips(clip_paths, reference_idx)
-        
-        edl = EditDecisionList()
-        min_offset = min(alignment.offsets.values())
-        
-        for path in clip_paths:
-            name = Path(path).stem
-            edl.add_source(path)
-            
-            offset = alignment.offsets.get(Path(path).name, 0.0)
-            pad = offset - min_offset
-            
-            # Add sync metadata
-            edl.metadata[f'sync_{name}'] = {
-                'offset_seconds': offset,
-                'pad_start': pad,
-                'confidence': alignment.confidence
-            }
-        
-        edl.export(output_edl)
-        print(f"   [EDL] EDL exporté: {output_edl}")
-        
-        return alignment
-
-
 if __name__ == "__main__":
     import sys
     

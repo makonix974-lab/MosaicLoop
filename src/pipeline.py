@@ -1,7 +1,7 @@
 """
 Pipeline — Orchestre le workflow complet GuitarMultiCam.
 
-Proxy -> Sync -> Apply Offsets -> Compose (Grid/Smart)
+Proxy -> Sync -> Apply Offsets -> Compose (Grid)
 """
 
 import json
@@ -12,11 +12,8 @@ import time
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 
-from tqdm import tqdm
-
 from sync.audio_sync import SyncManager, AlignmentResult
 from composer.video_composer import VideoComposer, CompositionConfig
-from composer.smart_composer import SmartComposer
 from composer.proxy import ProxyManager, ProxyConfig
 from composer.process_guard import ProcessGuard
 
@@ -36,9 +33,6 @@ class PipelineConfig:
     audio_source: int = 0
     preset: str = ""  # youtube, instagram, tiktok
     max_workers: int = 4
-    smart: bool = False
-    style: str = "auto"  # auto, dynamic, stable
-    trim_silence: bool = True
     config_path: str = ""
 
 
@@ -97,18 +91,13 @@ class Pipeline:
         subprocess.run(["taskkill", "/F", "/IM", "ffmpeg.exe"],
                        capture_output=True)
 
-        mode = "smart" if cfg.smart else "grid"
-        print(f"\n== GuitarMultiCam Pipeline == {n} clips -> {mode}")
+        print(f"\n== GuitarMultiCam Pipeline == {n} clips -> grid")
         print("=" * 50)
 
         proxies = self._step_proxy(cfg)
         alignment = self._step_sync(cfg, proxies)
         synced = self._step_apply_offsets(cfg, proxies, alignment)
-
-        if cfg.smart:
-            result = self._step_smart_compose(cfg, synced)
-        else:
-            result = self._step_compose(cfg, synced, alignment)
+        result = self._step_compose(cfg, synced, alignment)
 
         elapsed = time.time() - start
         result["elapsed"] = round(elapsed, 1)
@@ -301,34 +290,6 @@ class Pipeline:
         )
 
         result["elapsed"] = round(time.time() - t0, 1)
-        return result
-
-    def _step_smart_compose(self, cfg: PipelineConfig,
-                            synced: list[str]) -> dict:
-        print("\n[4/4] Smart composition (AI-driven)")
-
-        self._apply_preset(cfg)
-
-        config = CompositionConfig(
-            output_path=cfg.output_path,
-            output_width=cfg.output_width,
-            output_height=cfg.output_height,
-            output_fps=cfg.output_fps,
-            output_crf=cfg.output_crf,
-        )
-
-        t0 = time.time()
-        composer = SmartComposer(config)
-        result = composer.compose_smart(
-            synced,
-            style=cfg.style,
-            trim_silence=cfg.trim_silence,
-        )
-
-        result["elapsed"] = round(time.time() - t0, 1)
-        if result.get("success"):
-            switches = result.get("camera_switches", 0)
-            print(f"   Camera switches: {switches}")
         return result
 
     def _apply_preset(self, cfg: PipelineConfig):
