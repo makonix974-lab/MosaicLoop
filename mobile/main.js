@@ -1,6 +1,7 @@
-// MosaicLoop main entry — M5: overdub.
+// MosaicLoop main entry — M6: export session.
 
 import { Metronome } from "./metronome.js";
+import { buildZip } from "./zipstore.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -946,8 +947,83 @@ function updateTakeCounter() {
 function wireTakes() {
   $("monitor-vol").addEventListener("input", (e) => setMonitorVolume(e.target.value));
   $("takes-clear-btn").addEventListener("click", clearAllTakes);
+  $("takes-export-btn").addEventListener("click", exportSession);
   applyTempoLock();
   updateTakeCounter();
+}
+
+// ---------- Export ----------
+//
+// Bundles every take + a session.json descriptor into a single ZIP
+// the user can move to their desktop. The desktop pipeline reads
+// session.json, knows the takes are already exact-length on the
+// downbeat, and skips audio sync entirely.
+
+function buildSessionManifest() {
+  const bars       = Math.max(1, Number($("loop-bars").value) || 1);
+  const countIn    = Math.max(0, Number($("loop-countin").value) || 0);
+  const beatsPerBar = metro.beatsPerBar;
+  const bpm        = metro.bpm;
+  const loopSec    = bars * beatsPerBar * (60 / bpm);
+
+  const ext = (mime) => (mime || "").startsWith("video/mp4") ? "mp4" : "webm";
+
+  return {
+    schema: "mosaicloop.session/1",
+    created: new Date().toISOString(),
+    app_version: $("app-version").textContent,
+    tempo: { bpm, beats_per_bar: beatsPerBar },
+    loop: { bars, count_in_bars: countIn, duration_seconds: loopSec },
+    takes: takes.list.map((t) => ({
+      id: t.id,
+      file: `takes/take-${String(t.id).padStart(2, "0")}.${ext(t.mime)}`,
+      mime: t.mime || "video/webm",
+      bytes: t.blob.size,
+    })),
+  };
+}
+
+async function exportSession() {
+  if (takes.list.length === 0) return;
+  const btn = $("takes-export-btn");
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = "Packing…";
+
+  try {
+    const manifest = buildSessionManifest();
+    const entries = [
+      { name: "session.json",
+        blob: new Blob([JSON.stringify(manifest, null, 2)],
+                       { type: "application/json" }) },
+    ];
+    for (const t of takes.list) {
+      const ext = (t.mime || "").startsWith("video/mp4") ? "mp4" : "webm";
+      entries.push({
+        name: `takes/take-${String(t.id).padStart(2, "0")}.${ext}`,
+        blob: t.blob,
+      });
+    }
+
+    const zip = await buildZip(entries);
+    const url = URL.createObjectURL(zip);
+    const ts  = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const a   = document.createElement("a");
+    a.href = url;
+    a.download = `mosaicloop-session-${ts}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Defer revoke so the browser actually starts the download.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    debugLog(`Exported ${entries.length} entries (${(zip.size / 1024 / 1024).toFixed(1)} MB)`);
+  } catch (err) {
+    debugLog("export failed:", err && err.message);
+    setLoopStatus(`Export failed: ${err && err.message}`, "bad");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
 }
 
 // ---------- Boot ----------
