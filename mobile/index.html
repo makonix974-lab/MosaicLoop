@@ -12,7 +12,7 @@
 <body>
   <header>
     <h1>MosaicLoop</h1>
-    <p class="tag">M4 — looper · <span id="app-version">v0.0.7-debug</span></p>
+    <p class="tag">M5 — overdub · <span id="app-version">v0.0.8-m5</span></p>
   </header>
 
   <main>
@@ -35,12 +35,28 @@
         <span class="muted small" id="loop-duration">—</span>
       </div>
 
+      <div class="metro-row">
+        <label for="monitor-vol">Monitor</label>
+        <input type="range" id="monitor-vol" min="0" max="1" step="0.01" value="0.8" />
+        <span class="muted small" id="loop-take-counter">Take 1</span>
+      </div>
+
       <p id="loop-status" class="muted small">Enable the camera, then arm.</p>
 
       <div class="rec-controls">
         <button id="loop-arm-btn">Arm loop</button>
         <button id="loop-cancel-btn" hidden>Cancel</button>
       </div>
+    </section>
+
+    <section class="card" id="takes-card" hidden>
+      <h2>Takes</h2>
+      <ul id="takes-list" class="takes-list"></ul>
+      <div class="rec-controls">
+        <button id="takes-clear-btn">Clear all takes</button>
+      </div>
+      <p class="muted small">Tempo is locked while takes exist. Clear
+        them to change BPM, beats per bar, or loop length.</p>
     </section>
     <section class="card">
       <h2>Metronome</h2>
