@@ -11,6 +11,11 @@
 
 * { box-sizing: border-box; }
 
+/* Make the HTML `hidden` attribute reliable even when other rules set
+   `display`. Without this, `<video id="..." hidden>` stays visible
+   because the ID rule wins over the UA stylesheet. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;

@@ -123,12 +123,18 @@ function showMsg(text, level = "muted") {
 function setRecMode(mode) {
   // mode: 'idle' | 'ready' | 'recording' | 'stopped'
   $("enable-btn").hidden  = mode !== "idle";
-  $("record-btn").hidden  = mode !== "ready";
+  $("record-btn").hidden  = !(mode === "ready" || mode === "stopped");
   $("stop-btn").hidden    = mode !== "recording";
   $("flip-btn").hidden    = !(mode === "ready" || mode === "stopped");
   $("download-link").hidden = mode !== "stopped";
   $("preview").hidden  = mode === "stopped";
   $("playback").hidden = mode !== "stopped";
+
+  // Free memory: stop pinning the playback blob when we leave 'stopped'.
+  if (mode !== "stopped") {
+    $("playback").removeAttribute("src");
+    $("playback").load();
+  }
 }
 
 async function startStream(facing) {
@@ -209,6 +215,20 @@ function onRecord() {
 
     const playback = $("playback");
     playback.src = url;
+    // Chrome Android often writes webm without a duration header. The
+    // <video> reads `duration === Infinity` and refuses to scrub. The
+    // workaround: seek past the end, the browser then walks the stream,
+    // computes the real duration, and resets currentTime to 0.
+    playback.addEventListener("loadedmetadata", function fixDuration() {
+      if (playback.duration === Infinity) {
+        playback.currentTime = 1e10;
+        playback.addEventListener("timeupdate", function once() {
+          playback.removeEventListener("timeupdate", once);
+          playback.currentTime = 0;
+        });
+      }
+      playback.removeEventListener("loadedmetadata", fixDuration);
+    });
     playback.load();
 
     const link = $("download-link");

@@ -3,7 +3,7 @@
  * milestones add nothing here; recordings stay in IndexedDB / OPFS
  * and don't go through the SW.
  */
-const VERSION = "v0.0.2-m1";
+const VERSION = "v0.0.3-m1b";
 const SHELL_CACHE = `looper-shell-${VERSION}`;
 const SHELL_URLS = [
   "./",
