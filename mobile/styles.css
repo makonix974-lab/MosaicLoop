@@ -276,3 +276,16 @@ p { line-height: 1.45; }
 }
 
 .small { font-size: 0.85rem; }
+
+#debug-log {
+  margin: 0;
+  padding: 8px;
+  background: #000;
+  color: #4cc9f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
