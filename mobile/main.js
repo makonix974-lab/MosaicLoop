@@ -240,6 +240,39 @@ async function populateMicSelect() {
   sel.disabled = false;
 }
 
+/** Called by navigator.mediaDevices 'devicechange' events: phone
+ *  reports a new device list (e.g. headphones plugged or unplugged).
+ *  We refresh the dropdown, and if the currently-active mic vanished,
+ *  we re-acquire on whatever the OS now considers default. */
+async function onDeviceChange() {
+  if (!recState.stream) return;
+  const recording = recState.recorder && recState.recorder.state === "recording";
+  if (recording) {
+    debugLog("devicechange ignored: recording in progress");
+    return;
+  }
+
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const mics = devices.filter(d => d.kind === "audioinput");
+  const stillThere = recState.audioDeviceId
+    && mics.some(m => m.deviceId === recState.audioDeviceId);
+
+  if (!stillThere) {
+    debugLog("devicechange: active mic gone, re-acquiring on default");
+    showMsg("Audio device changed. Re-acquiring…");
+    try {
+      await startStream(recState.facing, null);
+      showMsg("");
+    } catch (err) {
+      showMsg(`Re-acquire failed: ${err.message}`, "bad");
+    }
+  } else {
+    // Same device still present, just refresh the list (labels may
+    // have changed: 'wired headset' appears/disappears, etc.)
+    await populateMicSelect();
+  }
+}
+
 async function onMicChange(deviceId) {
   if (!recState.stream) return;
   if (recState.recorder && recState.recorder.state === "recording") {
@@ -459,6 +492,12 @@ function wireRecorder() {
   $("stop-btn").addEventListener("click", onStop);
   $("flip-btn").addEventListener("click", onFlip);
   $("mic-select").addEventListener("change", (e) => onMicChange(e.target.value));
+
+  // Auto-refresh the mic list when devices change (headphones in/out,
+  // Bluetooth pair/unpair, USB audio plug, etc.).
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener("devicechange", onDeviceChange);
+  }
 
   // Free the camera if the page is hidden (saves battery + lets other
   // apps grab the cam). The user re-clicks Enable when they come back.
