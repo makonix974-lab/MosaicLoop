@@ -27,6 +27,9 @@ python cli/main.py analyze  --clips *.mp4 --output analysis.json
 
 # Disable session cache (force full rebuild)
 python cli/main.py auto --clips *.mp4 --no-cache --output final.mp4
+
+# Or launch the minimal GUI (tkinter, ships with Python)
+python gui/app.py
 ```
 
 ## Requirements
@@ -53,8 +56,11 @@ Python dependencies (see `requirements.txt`):
 
 ### What this tool does NOT do (yet)
 
-A GUI is on the roadmap for v0.3 — not bundled here. Built-in recording,
-auto subtitles, and "smart" angle switching aren't on the active roadmap.
+A minimal tkinter GUI is bundled (`python gui/app.py`) — file pickers,
+preset selector, log panel, no preview yet. A richer GUI (preview +
+waveform + manual offset adjustment) is still on the roadmap. Built-in
+recording, auto subtitles, and "smart" angle switching aren't on the
+active roadmap.
 The v0.1 prototypes for those are preserved under `archive/v0.1/` for
 reference but aren't maintained.
 
