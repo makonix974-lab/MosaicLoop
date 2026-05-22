@@ -2,14 +2,29 @@
 Background workers for non-blocking pipeline execution.
 """
 
-from pathlib import Path
+import io
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from pipeline import Pipeline, PipelineConfig
+from composer.process_guard import ProcessGuard
+
+
+class CaptureStdout(io.StringIO):
+    """Redirects stdout writes to a Qt signal."""
+
+    def __init__(self, signal):
+        super().__init__()
+        self._signal = signal
+
+    def write(self, text):
+        if text.strip():
+            self._signal.emit(text.rstrip())
+        super().write(text)
 
 
 class PipelineWorker(QObject):
@@ -29,25 +44,15 @@ class PipelineWorker(QObject):
         self._cancelled = True
 
     def run(self):
+        old_stdout = sys.stdout
         try:
-            pipeline = Pipeline(self.config)
+            ProcessGuard.cleanup_stale()
             self.log.emit("[Pipeline] Starting...")
-            self.progress.emit(0, "Initializing")
 
-            # Override print to capture logs
-            import builtins
-            original_print = builtins.print
-
-            def capture_print(*args, **kwargs):
-                msg = " ".join(str(a) for a in args)
-                self.log.emit(msg)
-                original_print(*args, **kwargs)
-
-            builtins.print = capture_print
+            pipeline = Pipeline(self.config)
+            sys.stdout = CaptureStdout(self.log)
 
             result = pipeline.run()
-
-            builtins.print = original_print
 
             if self._cancelled:
                 self.log.emit("[Pipeline] Cancelled by user")
@@ -55,7 +60,8 @@ class PipelineWorker(QObject):
 
             if result.get("success"):
                 self.progress.emit(100, "Done")
-                self.log.emit(f"[OK] Finished -> {result.get('output_path', '')}")
+                path = result.get("output_path", "")
+                self.log.emit(f"[OK] Finished -> {path}")
                 self.finished.emit(result)
             else:
                 err = result.get("error", "Unknown error")
@@ -65,3 +71,5 @@ class PipelineWorker(QObject):
         except Exception as e:
             self.log.emit(f"[ERROR] {e}")
             self.error.emit(str(e))
+        finally:
+            sys.stdout = old_stdout
