@@ -12,10 +12,36 @@
 <body>
   <header>
     <h1>MosaicLoop</h1>
-    <p class="tag">M2 — recorder + metronome · <span id="app-version">v0.0.5-m2</span></p>
+    <p class="tag">M4 — looper · <span id="app-version">v0.0.6-m4</span></p>
   </header>
 
   <main>
+    <section class="card">
+      <h2>Loop</h2>
+
+      <div class="metro-row">
+        <label for="loop-bars">Bars</label>
+        <input type="range" id="loop-bars" min="1" max="32" step="1" value="4" />
+        <input type="number" id="loop-bars-num" min="1" max="32" step="1" value="4" />
+      </div>
+
+      <div class="metro-row">
+        <label for="loop-countin">Count-in</label>
+        <select id="loop-countin">
+          <option value="0">none</option>
+          <option value="1" selected>1 bar</option>
+          <option value="2">2 bars</option>
+        </select>
+        <span class="muted small" id="loop-duration">—</span>
+      </div>
+
+      <p id="loop-status" class="muted small">Enable the camera, then arm.</p>
+
+      <div class="rec-controls">
+        <button id="loop-arm-btn">Arm loop</button>
+        <button id="loop-cancel-btn" hidden>Cancel</button>
+      </div>
+    </section>
     <section class="card">
       <h2>Metronome</h2>
 
