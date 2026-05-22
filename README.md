@@ -1,77 +1,105 @@
 # GuitarMultiCam Studio
 
-**Auto-edit tool for musicians** — Record, sync, and compose multi-cam videos with AI assistance.
+A small CLI tool that syncs and composes multi-camera video recordings of
+musical performances. Drop in N camera angles, get a single grid video
+with the audio aligned across all of them.
 
 ## Quick Start
 
 ```bash
-# Install
+# Install (Python 3.9+)
 pip install -r requirements.txt
+# Also requires FFmpeg in PATH: https://ffmpeg.org/download.html
 
-# One-shot: sync + compose 4 clips into a 2x2 grid
-python cli/main.py auto --clips cam1.mp4 cam2.mp4 cam3.mp4 cam4.mp4 --output final.mp4
+# Compose a 2x2 grid from 4 camera angles
+python cli/main.py auto --clips cam1.mp4 --clips cam2.mp4 --clips cam3.mp4 --clips cam4.mp4 \
+                        --output final.mp4
 
-# With preset for social media
-python cli/main.py auto --clips *.mp4 --preset youtube --output youtube.mp4
-python cli/main.py auto --clips *.mp4 --preset tiktok --output tiktok.mp4
+# Social-media presets
+python cli/main.py auto --clips *.mp4 --preset youtube --output yt.mp4
+python cli/main.py auto --clips *.mp4 --preset instagram --output ig.mp4
+python cli/main.py auto --clips *.mp4 --preset tiktok --output tt.mp4
 
-# Just analyze (preview metadata)
-python cli/main.py analyze --clips *.mp4 --output analysis.json
+# Step-by-step variants
+python cli/main.py sync     --clips *.mp4 --output offsets.json
+python cli/main.py compose  --clips *.mp4 --output grid.mp4 --layout 2x2
+python cli/main.py analyze  --clips *.mp4 --output analysis.json
 
-# Just sync (get offsets)
-python cli/main.py sync --clips *.mp4 --output offsets.json
-
-# Just compose (pre-synced clips)
-python cli/main.py compose --clips *.mp4 --output grid.mp4 --layout 2x2
+# Disable session cache (force full rebuild)
+python cli/main.py auto --clips *.mp4 --no-cache --output final.mp4
 ```
 
 ## Requirements
 
-- **Python 3.9+**
-- **FFmpeg** (in PATH) — [Download](https://ffmpeg.org/download.html)
-- **CUDA** (optional) — for GPU-accelerated encoding
+- Python 3.9+
+- FFmpeg in PATH
+- NVIDIA GPU (optional) — auto-detected for NVENC encoding
 
-## Features
+Python dependencies (see `requirements.txt`):
+- `numpy`, `librosa` (audio analysis), `click` (CLI)
+
+## What it does
 
 | Feature | Status |
-|---------|--------|
+|---|---|
 | Audio-based auto-sync (onset cross-correlation) | ✅ |
-| Multi-cam grid composer (2x2, 2x1, 1x2) | ✅ |
-| Video/audio analysis (BPM, key, segmentation) | ✅ |
-| Proxy workflow (fast editing → final render) | ✅ |
-| GPU acceleration (NVIDIA NVENC) | ✅ |
-| Social export presets (YouTube, Instagram, TikTok) | ✅ |
-| Smart angle switching (beat-aware) | 🚧 |
-| GUI (PyQt6) | 🔮 Planned |
-| Built-in recording | 🔮 Planned |
-| Auto subtitles (Whisper) | 🔮 Planned |
+| Multi-cam grid composer (2×2, 2×1, 1×2, 1×1) | ✅ |
+| Single-pass FFmpeg with sync padding inside `filter_complex` | ✅ |
+| Parallel proxy generation | ✅ |
+| GPU-accelerated encoding (NVIDIA NVENC, Intel QSV) | ✅ |
+| Social presets (YouTube 16:9, Instagram 1:1, TikTok 9:16) | ✅ |
+| Session cache (skip proxy + sync when inputs unchanged) | ✅ |
+| Audio analysis (BPM, onsets, energy segments) | ✅ |
+
+### What this tool does NOT do (yet)
+
+A GUI is on the roadmap for v0.3 — not bundled here. Built-in recording,
+auto subtitles, and "smart" angle switching aren't on the active roadmap.
+The v0.1 prototypes for those are preserved under `archive/v0.1/` for
+reference but aren't maintained.
 
 ## Architecture
 
 ```
 src/
-├── pipeline.py       # Workflow orchestration
-├── analyzer/         # Audio/video analysis (librosa, scenedetect)
-├── sync/             # Audio sync engine (onset cross-correlation)
-└── composer/         # Video composition (grid, proxy, GPU)
-    ├── video_composer.py
-    ├── proxy.py
-    ├── gpu_accel.py
-    └── process_guard.py
+├── pipeline.py          Workflow orchestration (3 steps: proxy → sync → compose)
+├── cache.py             Session cache (input fingerprints + cached proxies)
+├── models.py            Clip + ClipMetadata dataclasses
+├── analyzer/            Audio feature extraction (BPM, onsets, energy)
+├── sync/                Audio sync engine (onset cross-correlation)
+├── composer/            Video composition (grid, proxy, GPU detect)
+└── utils/ffmpeg_run.py  Single FFmpeg helper with progress + timeout
 
-cli/
-└── main.py           # CLI entry point (click)
-
-archive/
-└── experiments/      # Archived experimental scripts
+cli/main.py              CLI entry point (click)
+tests/                   Unit + integration tests (pytest)
+archive/                 v0.1 modules kept for reference
 ```
 
-## Why GuitarMultiCam?
+See `docs/ARCHITECTURE.md` for the data flow.
 
-- **Fast** — Go from raw footage to final video in minutes
-- **Smart** — Beat-aware editing cuts on musical transitions
-- **Simple** — One command does everything
-- **Free** — Open source, no subscriptions
+## Pipeline
+
+```
+inputs[]
+  ├─→ [1/3] proxy generation (parallel, optional, cached)
+  ├─→ [2/3] audio sync (cached)
+  └─→ [3/3] compose grid (single FFmpeg pass)
+        └─ output.mp4
+```
+
+The third step injects per-clip time pads directly into the
+`filter_complex` graph (`tpad` for video, `adelay` for audio), so there
+are no intermediate "synced clip" files on disk.
+
+## Tests
+
+```bash
+pytest tests/                                  # 40 tests
+pytest tests/ --cov=src --cov-report=term      # with coverage
+```
+
+Synthetic fixtures (a click track sliced into 4 windows with known offsets)
+are auto-generated on first run via `tests/conftest.py`.
 
 ## License
 

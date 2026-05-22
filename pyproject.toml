@@ -4,8 +4,8 @@ build-backend = "setuptools.backends._legacy:_Backend"
 
 [project]
 name = "guitarmulticam"
-version = "0.1.0"
-description = "Auto-edit tool for musicians — Record, sync, and compose multi-cam videos with AI assistance"
+version = "0.2.0"
+description = "Multi-cam audio sync + grid composer for musical performances"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
