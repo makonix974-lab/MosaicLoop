@@ -154,6 +154,30 @@ class Pipeline:
         print(f"   {time.time() - t0:.1f}s")
         return alignment
 
+    def _validate_video_file(self, path: str) -> bool:
+        """Validate video file with ffprobe. Returns True if valid."""
+        try:
+            result = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", 
+                 "format=duration", "-of", "json", path],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode != 0:
+                return False
+            data = json.loads(result.stdout)
+            return "format" in data and "duration" in data["format"]
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+            return False
+
+    def _cleanup_corrupted_files(self, directory: Path):
+        """Remove corrupted video files (moov atom not found)."""
+        if not directory.exists():
+            return
+        for f in directory.glob("*.mp4"):
+            if not self._validate_video_file(str(f)):
+                print(f"   Removing corrupted: {f.name}")
+                f.unlink(missing_ok=True)
+
     def _step_apply_offsets(self, cfg: PipelineConfig,
                             proxies: list[tuple[str, str]],
                             alignment: AlignmentResult) -> list[str]:
@@ -163,6 +187,9 @@ class Pipeline:
         synced = []
         output_dir = Path(cfg.output_path).parent / "_synced"
         output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Cleanup corrupted files from previous runs
+        self._cleanup_corrupted_files(output_dir)
 
         for src_path, proxy_path in proxies:
             name = Path(src_path).name
@@ -171,29 +198,67 @@ class Pipeline:
             out_path = output_dir / f"synced_{name}"
             synced.append(str(out_path))
 
-            if abs(pad) < 0.05:
-                cmd = ["ffmpeg", "-y", "-i", proxy_path,
-                       "-c", "copy", str(out_path)]
-            elif pad > 0:
-                cmd = [
-                    "ffmpeg", "-y",
-                    "-f", "lavfi", "-t", f"{pad:.3f}",
-                    "-i", f"color=c=black:s={cfg.proxy_width}x{cfg.proxy_height}:r={cfg.output_fps}",
-                    "-f", "lavfi", "-t", f"{pad:.3f}",
-                    "-i", "anullsrc=r=48000:cl=mono",
-                    "-i", proxy_path,
-                    "-filter_complex",
-                    "[0:v][1:a][2:v][2:a]concat=n=2:v=1:a=1[vo][ao]",
-                    "-map", "[vo]", "-map", "[ao]",
-                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-                    "-c:a", "aac", str(out_path),
-                ]
-            else:
-                trim = -pad
-                cmd = ["ffmpeg", "-y", "-ss", f"{trim:.3f}",
-                       "-i", proxy_path, "-c", "copy", str(out_path)]
-
-            subprocess.run(cmd, capture_output=True, text=True)
+            try:
+                if abs(pad) < 0.05:
+                    # No adjustment needed
+                    cmd = ["ffmpeg", "-y", "-i", proxy_path,
+                           "-c", "copy", str(out_path)]
+                    subprocess.run(cmd, capture_output=True, text=True, 
+                                 timeout=300, check=True)
+                    
+                elif pad > 0:
+                    # Need padding: use concat demuxer (simpler than filter_complex)
+                    # Create temporary black video
+                    black_path = output_dir / f"_black_{pad:.3f}s.mp4"
+                    cmd_black = [
+                        "ffmpeg", "-y", "-f", "lavfi", "-t", f"{pad:.3f}",
+                        "-i", f"color=c=black:s={cfg.proxy_width}x{cfg.proxy_height}:r={cfg.output_fps}",
+                        "-f", "lavfi", "-t", f"{pad:.3f}",
+                        "-i", "anullsrc=r=48000:cl=mono",
+                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                        "-c:a", "aac", "-shortest", str(black_path)
+                    ]
+                    subprocess.run(cmd_black, capture_output=True, text=True,
+                                 timeout=60, check=True)
+                    
+                    # Concat with demuxer
+                    concat_list = output_dir / f"_concat_{name}.txt"
+                    with open(concat_list, 'w') as f:
+                        f.write(f"file '{black_path.absolute()}'\n")
+                        f.write(f"file '{Path(proxy_path).absolute()}'\n")
+                    
+                    cmd_concat = [
+                        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                        "-i", str(concat_list),
+                        "-c", "copy", str(out_path)
+                    ]
+                    subprocess.run(cmd_concat, capture_output=True, text=True,
+                                 timeout=300, check=True)
+                    
+                    # Cleanup temp files
+                    black_path.unlink(missing_ok=True)
+                    concat_list.unlink(missing_ok=True)
+                    
+                else:
+                    # Need trimming
+                    trim = -pad
+                    cmd = ["ffmpeg", "-y", "-ss", f"{trim:.3f}",
+                           "-i", proxy_path, "-c", "copy", str(out_path)]
+                    subprocess.run(cmd, capture_output=True, text=True,
+                                 timeout=300, check=True)
+                
+                # Validate output
+                if not self._validate_video_file(str(out_path)):
+                    raise RuntimeError(f"Output validation failed: {out_path.name}")
+                    
+            except subprocess.TimeoutExpired:
+                print(f"   [TIMEOUT] {name} (>300s)")
+                out_path.unlink(missing_ok=True)
+                raise RuntimeError(f"FFmpeg timeout on {name}")
+            except subprocess.CalledProcessError as e:
+                print(f"   [ERROR] {name}: {e}")
+                out_path.unlink(missing_ok=True)
+                raise RuntimeError(f"FFmpeg failed on {name}")
 
         print(f"   {time.time() - t0:.1f}s")
         return synced

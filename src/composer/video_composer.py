@@ -371,11 +371,12 @@ class VideoComposer:
         # Audio: re-encode to AAC
         cmd.extend(['-c:a', 'aac', '-b:a', '128k'])
         
-        # Video encoding
+        # Video encoding (force output FPS to avoid encoding source framerate)
         cmd.extend([
             '-c:v', self.config.output_codec,
             '-preset', 'fast',
-            '-crf', str(self.config.output_crf)
+            '-crf', str(self.config.output_crf),
+            '-r', str(self.config.output_fps)
         ])
         
         # Progress via FILE (pas de pipe)
@@ -388,9 +389,13 @@ class VideoComposer:
             print("   Rendering 2x2 grid...")
             ProcessGuard.cleanup_stale()
 
+            # Redirect stderr to file to avoid deadlock (buffer filling up)
+            stderr_path = tempfile.NamedTemporaryFile(suffix='.stderr', delete=False).name
+            stderr_file = open(stderr_path, 'w', encoding='utf-8', errors='replace')
+
             guard = ProcessGuard("grid")
             process = subprocess.Popen(
-                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
+                cmd, stdout=subprocess.DEVNULL, stderr=stderr_file, text=True
             )
             guard.track(process.pid, "grid")
 
@@ -418,11 +423,26 @@ class VideoComposer:
                     pass
                 time.sleep(0.5)
 
-            _, stderr = process.communicate()
+            process.communicate()
+            stderr_file.close()
             guard.untrack(process.pid)
             print(f"\r   [####################] 100%")
             returncode = process.returncode
-            stderr = stderr or ''
+            
+            # Read stderr from file if needed
+            stderr = ''
+            if returncode != 0:
+                try:
+                    with open(stderr_path, 'r', encoding='utf-8', errors='replace') as f:
+                        stderr = f.read()
+                except OSError:
+                    pass
+            
+            # Cleanup stderr file
+            try:
+                Path(stderr_path).unlink(missing_ok=True)
+            except OSError:
+                pass
         else:
             result = subprocess.run(cmd, capture_output=True, text=True)
             returncode = result.returncode
