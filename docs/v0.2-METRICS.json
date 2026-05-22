@@ -1,0 +1,16 @@
+{
+  "v0.2_cold_seconds": 26.97,
+  "v0.2_warm_seconds": 8.83,
+  "v0.2_speedup_warm": 3.05,
+  "v0.2_output_mb": 54.89,
+  "frame_comparison": {
+    "match": true,
+    "mean_abs_diff": 0.454,
+    "max_abs_diff": 192.0,
+    "pct_pixels_close_within_8": 99.18,
+    "duration_v01": 202.7,
+    "duration_v02": 202.7,
+    "duration_diff_seconds": 0.0,
+    "sample_timestamp": 101.35
+  }
+}
