@@ -1,4 +1,4 @@
-// MosaicLoop main entry — M2: recorder + metronome.
+// MosaicLoop main entry — M5: overdub.
 
 import { Metronome } from "./metronome.js";
 
@@ -526,6 +526,7 @@ async function _onArmLoop() {
     cancelled = true;
     clearTimeout(countTimer);
     clearTimeout(recordTimer);
+    stopAllScheduledTakes();
     looperState.armed = false;
     setLoopMode("idle");
     setLoopStatus("Cancelled.", "muted");
@@ -550,13 +551,28 @@ async function _onArmLoop() {
   // Phase 3: actual record.
   recordTimer = setTimeout(() => {
     if (cancelled) return;
-    setLoopStatus(`Recording ${bars} bar(s) (${dur.toFixed(2)} s)…`, "bad");
+    const overdubMsg = takes.list.length > 0
+      ? ` (overdub on ${takes.list.length} take${takes.list.length > 1 ? "s" : ""})`
+      : "";
+    setLoopStatus(`Recording ${bars} bar(s) (${dur.toFixed(2)} s)${overdubMsg}…`, "bad");
+
+    // Schedule monitoring playback of previous takes — sample-accurate
+    // against the same downbeat the recorder is about to start on.
+    scheduleTakesAt(downbeatB);
+
     startRecording({
       durationSec: dur,
-      onAutoStop: () => {
+      onAutoStop: async ({ blob }) => {
+        stopAllScheduledTakes();
         looperState.armed = false;
         setLoopMode("idle");
-        setLoopStatus(`Loop captured (${dur.toFixed(2)} s).`, "ok");
+        try {
+          const id = await addTake({ blob, mime: recState.mime });
+          setLoopStatus(`Take ${id} captured (${dur.toFixed(2)} s).`, "ok");
+        } catch (err) {
+          debugLog("addTake failed:", err && err.message);
+          setLoopStatus(`Take captured but indexing failed: ${err && err.message}`, "warn");
+        }
       },
     });
   }, msUntilRecord);
@@ -585,6 +601,177 @@ function wireLooper() {
   setLoopMode("idle");
 }
 
+// ---------- Takes (overdub library) ----------
+//
+// Each take is one captured loop. We keep:
+//   - the Blob (so the user can download it later)
+//   - a fresh object URL for in-page playback
+//   - an AudioBuffer decoded once at capture time, used to monitor the
+//     take in the headphones during the *next* take's recording
+//
+// Tempo, beats and bar count are frozen while the list is non-empty:
+//   takes share an exact length, so changing the grid would desync
+//   anything you've already recorded.
+//
+// The monitoring graph is:
+//   take.audioBuffer -> BufferSourceNode -> takes.monitorGain
+//                                        -> AudioContext.destination
+// It does NOT feed into the recorder MediaStream, so the previous
+// takes don't bleed into the new recording's audio track. The user
+// hears them in headphones; the mic captures only their playing.
+
+const takes = {
+  list: [],            // [{ id, blob, url, audioBuffer, mime }]
+  monitorGain: null,
+  scheduledNodes: [],
+};
+
+function ensureMonitorGain() {
+  if (!metro._ctx) return null;
+  if (!takes.monitorGain) {
+    takes.monitorGain = metro._ctx.createGain();
+    takes.monitorGain.gain.value = Number($("monitor-vol").value);
+    takes.monitorGain.connect(metro._ctx.destination);
+  }
+  return takes.monitorGain;
+}
+
+function setMonitorVolume(v) {
+  const value = Math.max(0, Math.min(1, Number(v)));
+  if (takes.monitorGain) {
+    takes.monitorGain.gain.setTargetAtTime(value, metro._ctx.currentTime, 0.01);
+  }
+}
+
+async function decodeBlobAudio(blob) {
+  await metro.ensureAudio();
+  const buf = await blob.arrayBuffer();
+  // decodeAudioData is callback-based on Safari; the Promise overload
+  // works on modern Chrome which is our target. We could shim if iOS
+  // becomes a target.
+  return await metro._ctx.decodeAudioData(buf);
+}
+
+async function addTake({ blob, mime }) {
+  let audioBuffer = null;
+  try {
+    audioBuffer = await decodeBlobAudio(blob);
+  } catch (err) {
+    debugLog("decodeAudioData failed:", err && err.message);
+    setLoopStatus("Could not decode take audio (overdub disabled).", "warn");
+  }
+  const url = URL.createObjectURL(blob);
+  const id  = takes.list.length + 1;
+  takes.list.push({ id, blob, url, audioBuffer, mime });
+  renderTakes();
+  applyTempoLock();
+  updateTakeCounter();
+  return id;
+}
+
+function removeTake(id) {
+  const idx = takes.list.findIndex(t => t.id === id);
+  if (idx < 0) return;
+  URL.revokeObjectURL(takes.list[idx].url);
+  takes.list.splice(idx, 1);
+  // Renumber so the user sees Take 1..N (gaps are confusing).
+  takes.list.forEach((t, i) => { t.id = i + 1; });
+  renderTakes();
+  applyTempoLock();
+  updateTakeCounter();
+}
+
+function clearAllTakes() {
+  takes.list.forEach(t => URL.revokeObjectURL(t.url));
+  takes.list = [];
+  stopAllScheduledTakes();
+  renderTakes();
+  applyTempoLock();
+  updateTakeCounter();
+}
+
+function scheduleTakesAt(audioStartTime) {
+  stopAllScheduledTakes();
+  ensureMonitorGain();
+  if (!takes.monitorGain) return;
+  for (const t of takes.list) {
+    if (!t.audioBuffer) continue;
+    const src = metro._ctx.createBufferSource();
+    src.buffer = t.audioBuffer;
+    src.connect(takes.monitorGain);
+    src.start(audioStartTime);
+    takes.scheduledNodes.push(src);
+  }
+}
+
+function stopAllScheduledTakes() {
+  for (const n of takes.scheduledNodes) {
+    try { n.stop(); } catch (_) { /* already done */ }
+  }
+  takes.scheduledNodes = [];
+}
+
+function renderTakes() {
+  const card = $("takes-card");
+  const list = $("takes-list");
+  card.hidden = takes.list.length === 0;
+  list.innerHTML = "";
+  for (const t of takes.list) {
+    const li = document.createElement("li");
+    li.className = "take-item";
+
+    const label = document.createElement("span");
+    label.className = "take-label";
+    label.textContent = `Take ${t.id}`;
+    if (!t.audioBuffer) {
+      label.textContent += " (no monitor)";
+      label.classList.add("warn");
+    }
+    li.appendChild(label);
+
+    const audio = document.createElement("audio");
+    audio.controls = true;
+    audio.preload = "metadata";
+    audio.src = t.url;
+    li.appendChild(audio);
+
+    const dl = document.createElement("a");
+    dl.className = "take-btn";
+    dl.textContent = "DL";
+    dl.href = t.url;
+    const ext = (t.mime || "").startsWith("video/mp4") ? "mp4" : "webm";
+    dl.download = `mosaic-take-${t.id}.${ext}`;
+    li.appendChild(dl);
+
+    const del = document.createElement("button");
+    del.className = "take-btn take-del";
+    del.textContent = "X";
+    del.addEventListener("click", () => removeTake(t.id));
+    li.appendChild(del);
+
+    list.appendChild(li);
+  }
+}
+
+function applyTempoLock() {
+  const locked = takes.list.length > 0;
+  for (const id of ["metro-bpm", "metro-bpm-num", "metro-beats",
+                    "loop-bars", "loop-bars-num"]) {
+    $(id).disabled = locked;
+  }
+}
+
+function updateTakeCounter() {
+  $("loop-take-counter").textContent = `Take ${takes.list.length + 1}`;
+}
+
+function wireTakes() {
+  $("monitor-vol").addEventListener("input", (e) => setMonitorVolume(e.target.value));
+  $("takes-clear-btn").addEventListener("click", clearAllTakes);
+  applyTempoLock();
+  updateTakeCounter();
+}
+
 // ---------- Boot ----------
 
 reportEnvironment();
@@ -593,4 +780,5 @@ wireInstallPrompt();
 wireRecorder();
 wireMetronome();
 wireLooper();
+wireTakes();
 setRecMode("idle");
