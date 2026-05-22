@@ -1,0 +1,14 @@
+{
+  "name": "GuitarLooper",
+  "short_name": "Looper",
+  "description": "Multi-cam guitar overdub looper.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#111111",
+  "theme_color": "#111111",
+  "icons": [
+    { "src": "./icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
