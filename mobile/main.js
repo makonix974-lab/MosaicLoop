@@ -116,9 +116,20 @@ const recState = {
   chunks: [],
   mime: "",
   facing: "user",       // 'user' = selfie, 'environment' = rear
+  audioDeviceId: null,  // selected microphone, or null for default
   startTime: 0,
   timerId: 0,
   blobUrl: null,
+};
+
+// VU meter — separate AudioContext from the metronome's because we
+// need to feed it the *recording* mic stream, and binding the mic into
+// the metronome ctx would risk feedback if the routing is sloppy.
+const vu = {
+  ctx: null,
+  src: null,
+  analyser: null,
+  rafId: 0,
 };
 
 function fmtTime(seconds) {
@@ -157,11 +168,24 @@ function setRecMode(mode) {
   }
 }
 
-async function startStream(facing) {
-  // Stop whatever was running before switching facing.
+async function startStream(facing, audioDeviceId = null) {
+  // Stop whatever was running before switching facing or device.
   if (recState.stream) {
     recState.stream.getTracks().forEach((t) => t.stop());
     recState.stream = null;
+  }
+  stopVuMeter();
+
+  const audio = {
+    // Critical for the future sync beep + raw musical signal.
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl:  false,
+  };
+  if (audioDeviceId) {
+    // 'exact' would throw if the device disappears (e.g. headphones
+    // unplugged); 'ideal' lets the browser fall back gracefully.
+    audio.deviceId = { ideal: audioDeviceId };
   }
 
   const constraints = {
@@ -171,19 +195,132 @@ async function startStream(facing) {
       height: { ideal: 720 },
       frameRate: { ideal: 30 },
     },
-    audio: {
-      // Critical for the future sync beep + raw musical signal.
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl:  false,
-    },
+    audio,
   };
 
   const stream = await navigator.mediaDevices.getUserMedia(constraints);
   recState.stream = stream;
   recState.facing = facing;
+  recState.audioDeviceId = audioDeviceId
+    || stream.getAudioTracks()[0]?.getSettings()?.deviceId
+    || null;
   $("preview").srcObject = stream;
-  await $("preview").play().catch(() => {});  // some Androids need explicit play
+  await $("preview").play().catch(() => {});
+
+  await populateMicSelect();
+  startVuMeter(stream);
+}
+
+async function populateMicSelect() {
+  const sel = $("mic-select");
+  if (!navigator.mediaDevices.enumerateDevices) {
+    sel.innerHTML = "<option>(enumerateDevices unsupported)</option>";
+    sel.disabled = true;
+    return;
+  }
+  // enumerateDevices only returns labels after at least one
+  // getUserMedia grant — by now we have one, so labels are populated.
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const mics = devices.filter(d => d.kind === "audioinput");
+  sel.innerHTML = "";
+  if (mics.length === 0) {
+    sel.innerHTML = "<option>(no microphones found)</option>";
+    sel.disabled = true;
+    return;
+  }
+  for (const m of mics) {
+    const opt = document.createElement("option");
+    opt.value = m.deviceId;
+    opt.textContent = m.label || `Mic ${m.deviceId.slice(0, 6)}`;
+    if (recState.audioDeviceId && m.deviceId === recState.audioDeviceId) {
+      opt.selected = true;
+    }
+    sel.appendChild(opt);
+  }
+  sel.disabled = false;
+}
+
+async function onMicChange(deviceId) {
+  if (!recState.stream) return;
+  if (recState.recorder && recState.recorder.state === "recording") {
+    debugLog("mic change blocked: recording in progress");
+    return;
+  }
+  try {
+    showMsg("Switching mic…");
+    await startStream(recState.facing, deviceId);
+    showMsg("");
+  } catch (err) {
+    showMsg(`Mic switch failed: ${err.message}`, "bad");
+    debugLog("mic switch failed:", err && err.message);
+  }
+}
+
+// ---------- VU meter ----------
+
+function startVuMeter(stream) {
+  stopVuMeter();
+  const tracks = stream.getAudioTracks();
+  if (tracks.length === 0) return;
+
+  const Ctor = window.AudioContext || window.webkitAudioContext;
+  vu.ctx = new Ctor();
+  vu.src = vu.ctx.createMediaStreamSource(stream);
+  vu.analyser = vu.ctx.createAnalyser();
+  vu.analyser.fftSize = 1024;
+  vu.analyser.smoothingTimeConstant = 0.4;
+  vu.src.connect(vu.analyser);
+  // No connection to destination: we only want to *measure*, not play.
+
+  const buf = new Uint8Array(vu.analyser.fftSize);
+  let peakHold = 0;
+  let peakHoldTimer = 0;
+
+  const tick = () => {
+    if (!vu.analyser) return;
+    vu.analyser.getByteTimeDomainData(buf);
+    // RMS in 0..1 of the [0..255] PCM-ish samples centred on 128.
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const v = (buf[i] - 128) / 128;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / buf.length);
+    // Compress to a friendlier scale: dB-ish, then clamp to 0..1.
+    const level = Math.min(1, Math.max(0, (20 * Math.log10(rms + 1e-6) + 60) / 60));
+
+    if (level > peakHold) {
+      peakHold = level;
+      clearTimeout(peakHoldTimer);
+      peakHoldTimer = setTimeout(() => { peakHold = 0; }, 800);
+    }
+
+    const fill = $("vu-fill");
+    if (fill) fill.style.width = `${(level * 100).toFixed(1)}%`;
+
+    const label = $("vu-label");
+    if (label) {
+      if (level < 0.02) label.textContent = "mic silent (no signal)";
+      else if (level < 0.15) label.textContent = `low (${(level * 100).toFixed(0)}%)`;
+      else if (level < 0.85) label.textContent = `ok (${(level * 100).toFixed(0)}%)`;
+      else label.textContent = `LOUD (${(level * 100).toFixed(0)}%)`;
+    }
+    vu.rafId = requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+function stopVuMeter() {
+  if (vu.rafId) cancelAnimationFrame(vu.rafId);
+  vu.rafId = 0;
+  if (vu.src) { try { vu.src.disconnect(); } catch (_) {} }
+  if (vu.analyser) { try { vu.analyser.disconnect(); } catch (_) {} }
+  if (vu.ctx) { try { vu.ctx.close(); } catch (_) {} }
+  vu.src = vu.analyser = vu.ctx = null;
+  const fill = $("vu-fill");
+  if (fill) fill.style.width = "0%";
+  const label = $("vu-label");
+  if (label) label.textContent = "mic idle";
 }
 
 async function onEnable() {
@@ -321,6 +458,7 @@ function wireRecorder() {
   $("record-btn").addEventListener("click", onRecord);
   $("stop-btn").addEventListener("click", onStop);
   $("flip-btn").addEventListener("click", onFlip);
+  $("mic-select").addEventListener("change", (e) => onMicChange(e.target.value));
 
   // Free the camera if the page is hidden (saves battery + lets other
   // apps grab the cam). The user re-clicks Enable when they come back.
@@ -329,6 +467,7 @@ function wireRecorder() {
         && (!recState.recorder || recState.recorder.state === "inactive")) {
       recState.stream.getTracks().forEach((t) => t.stop());
       recState.stream = null;
+      stopVuMeter();
       setRecMode("idle");
       showMsg("Camera released. Tap Enable camera to resume.");
     }
