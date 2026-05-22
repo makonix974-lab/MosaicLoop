@@ -831,17 +831,60 @@ async function decodeBlobAudio(blob) {
   return await metro._ctx.decodeAudioData(buf);
 }
 
+/** Find how much silence sits at the head of `audioBuffer`.
+ *
+ *  MediaRecorder.start() on Chrome Android needs a few tens of ms
+ *  before the encoder actually opens its first packet, so even when
+ *  we fire .start() *exactly* on the downbeat the captured file has
+ *  ~30-80 ms of digital silence at the start. When we later play
+ *  that buffer back from t=0 over the click of the next take, the
+ *  musical content lands that many ms late — the user hears the
+ *  drift immediately.
+ *
+ *  We scan all channels for the first sample with magnitude above
+ *  THRESHOLD (well below mic noise floor on a real track, well above
+ *  the residual digital silence MediaRecorder leaves at startup) and
+ *  return that offset in seconds, capped so a degenerate detection
+ *  can't lop off real music.
+ */
+function detectLeadingSilence(audioBuffer) {
+  const THRESHOLD = 0.005;        // ~ -46 dBFS
+  const MAX_TRIM_SEC = 0.20;      // never trim more than 200 ms
+
+  const sr = audioBuffer.sampleRate;
+  const maxSamples = Math.min(audioBuffer.length,
+                              Math.floor(MAX_TRIM_SEC * sr));
+  const channels = audioBuffer.numberOfChannels;
+
+  // Pull each channel's data once (Float32Array is heavy to subscript
+  // through `getChannelData` repeatedly).
+  const data = [];
+  for (let c = 0; c < channels; c++) data.push(audioBuffer.getChannelData(c));
+
+  for (let i = 0; i < maxSamples; i++) {
+    for (let c = 0; c < channels; c++) {
+      if (Math.abs(data[c][i]) > THRESHOLD) {
+        return i / sr;
+      }
+    }
+  }
+  return 0;  // genuinely silent for the first 200 ms — leave alone
+}
+
 async function addTake({ blob, mime }) {
   let audioBuffer = null;
+  let leadingSilenceSec = 0;
   try {
     audioBuffer = await decodeBlobAudio(blob);
+    leadingSilenceSec = detectLeadingSilence(audioBuffer);
+    debugLog(`take leading silence: ${(leadingSilenceSec * 1000).toFixed(0)} ms`);
   } catch (err) {
     debugLog("decodeAudioData failed:", err && err.message);
     setLoopStatus("Could not decode take audio (overdub disabled).", "warn");
   }
   const url = URL.createObjectURL(blob);
   const id  = takes.list.length + 1;
-  takes.list.push({ id, blob, url, audioBuffer, mime });
+  takes.list.push({ id, blob, url, audioBuffer, leadingSilenceSec, mime });
   renderTakes();
   applyTempoLock();
   updateTakeCounter();
@@ -878,7 +921,11 @@ function scheduleTakesAt(audioStartTime) {
     const src = metro._ctx.createBufferSource();
     src.buffer = t.audioBuffer;
     src.connect(takes.monitorGain);
-    src.start(audioStartTime);
+    // Skip the leading digital silence MediaRecorder leaves on start
+    // so the first audible sample lands on `audioStartTime` instead
+    // of `audioStartTime + recorder lag`. Each take has its own
+    // measurement done once at decode time.
+    src.start(audioStartTime, t.leadingSilenceSec || 0);
     takes.scheduledNodes.push(src);
   }
 }
@@ -979,6 +1026,7 @@ function buildSessionManifest() {
       file: `takes/take-${String(t.id).padStart(2, "0")}.${ext(t.mime)}`,
       mime: t.mime || "video/webm",
       bytes: t.blob.size,
+      leading_silence_seconds: Number((t.leadingSilenceSec || 0).toFixed(4)),
     })),
   };
 }
