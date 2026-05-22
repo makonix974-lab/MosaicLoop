@@ -22,7 +22,9 @@ except ImportError:
 
 import click
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+_ROOT = str(Path(__file__).parent.parent)
+sys.path.insert(0, _ROOT + "/src")
+sys.path.insert(0, _ROOT)
 
 from pipeline import Pipeline, PipelineConfig, load_config
 from sync.audio_sync import SyncManager
