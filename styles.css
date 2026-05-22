@@ -186,3 +186,93 @@ p { line-height: 1.45; }
   padding: 12px 20px;
   border-radius: 8px;
 }
+
+/* ---------- Metronome ---------- */
+
+.metro-display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  background: #000;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.metro-leds {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.metro-led {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #222;
+  border: 1px solid #333;
+  transition: background 60ms linear, transform 60ms linear;
+}
+.metro-led.accent { border-color: var(--accent); }
+.metro-led.on { background: var(--accent); transform: scale(1.15); }
+.metro-led.flash-accent { background: var(--bad); }
+
+.metro-bpm {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--fg);
+  text-align: right;
+  min-width: 90px;
+}
+.metro-bpm small {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+
+.metro-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 60px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.metro-row label {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.metro-row label.inline {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg);
+}
+.metro-row input[type="range"] { width: 100%; }
+.metro-row input[type="number"],
+.metro-row select {
+  background: #1b1b1b;
+  border: 1px solid #333;
+  color: var(--fg);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+#metro-toggle {
+  background: var(--ok);
+  color: #000;
+}
+#metro-toggle.active {
+  background: var(--bad);
+  color: #fff;
+}
+
+.small { font-size: 0.85rem; }

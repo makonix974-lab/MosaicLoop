@@ -1,4 +1,6 @@
-// MosaicLoop main entry — M1: camera + mic preview, record, playback.
+// MosaicLoop main entry — M2: recorder + metronome.
+
+import { Metronome } from "./metronome.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -296,10 +298,97 @@ function wireRecorder() {
   });
 }
 
+// ---------- Metronome ----------
+
+const metro = new Metronome();
+
+function renderMetroLeds() {
+  const host = $("metro-leds");
+  host.innerHTML = "";
+  for (let i = 0; i < metro.beatsPerBar; i++) {
+    const led = document.createElement("span");
+    led.className = "metro-led";
+    if (i === 0 && metro.accentFirst) led.classList.add("accent");
+    host.appendChild(led);
+  }
+}
+
+function flashLed(beat1Based, isAccent) {
+  const leds = $("metro-leds").children;
+  const idx = beat1Based - 1;
+  if (idx < 0 || idx >= leds.length) return;
+  const el = leds[idx];
+  el.classList.add("on");
+  if (isAccent) el.classList.add("flash-accent");
+  setTimeout(() => {
+    el.classList.remove("on", "flash-accent");
+  }, 90);
+}
+
+function syncBpmInputs(v) {
+  $("metro-bpm").value = v;
+  $("metro-bpm-num").value = v;
+  $("metro-bpm-val").textContent = v;
+}
+
+function wireMetronome() {
+  metro.onTick = ({ beat, isAccent }) => flashLed(beat, isAccent);
+  renderMetroLeds();
+
+  const onBpm = (raw) => {
+    const v = Math.max(40, Math.min(220, Math.round(Number(raw) || 100)));
+    metro.setBpm(v);
+    syncBpmInputs(v);
+  };
+  $("metro-bpm").addEventListener("input", (e) => onBpm(e.target.value));
+  $("metro-bpm-num").addEventListener("change", (e) => onBpm(e.target.value));
+
+  $("metro-beats").addEventListener("change", (e) => {
+    metro.setBeatsPerBar(Number(e.target.value));
+    renderMetroLeds();
+  });
+
+  $("metro-accent").addEventListener("change", (e) => {
+    metro.setAccentFirst(e.target.checked);
+    renderMetroLeds();
+  });
+
+  $("metro-vol").addEventListener("input", (e) => {
+    metro.setVolume(Number(e.target.value));
+  });
+
+  $("metro-toggle").addEventListener("click", async () => {
+    if (metro.isRunning) {
+      metro.stop();
+      $("metro-toggle").textContent = "Start metronome";
+      $("metro-toggle").classList.remove("active");
+    } else {
+      try {
+        await metro.start();
+        $("metro-toggle").textContent = "Stop metronome";
+        $("metro-toggle").classList.add("active");
+      } catch (err) {
+        console.error("Metronome failed to start:", err);
+      }
+    }
+  });
+
+  // Suspending the AudioContext when the tab is hidden saves battery
+  // and avoids weird glitches when Android suspends background audio.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden" && metro.isRunning) {
+      metro.stop();
+      $("metro-toggle").textContent = "Start metronome";
+      $("metro-toggle").classList.remove("active");
+    }
+  });
+}
+
 // ---------- Boot ----------
 
 reportEnvironment();
 registerServiceWorker();
 wireInstallPrompt();
 wireRecorder();
+wireMetronome();
 setRecMode("idle");

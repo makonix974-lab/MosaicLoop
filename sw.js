@@ -6,13 +6,14 @@
  *   cache-first means every code change spends a day fighting the SW.
  *   We can switch back to cache-first once the app stabilises.
  */
-const VERSION = "v0.0.4-m1c";
+const VERSION = "v0.0.5-m2";
 const SHELL_CACHE = `looper-shell-${VERSION}`;
 const SHELL_URLS = [
   "./",
   "./index.html",
   "./styles.css",
   "./main.js",
+  "./metronome.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
 ];
