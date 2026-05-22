@@ -1,9 +1,12 @@
-/* GuitarLooper service worker — shell cache only (M0).
- * We cache the static shell so the app loads when installed. Future
- * milestones add nothing here; recordings stay in IndexedDB / OPFS
- * and don't go through the SW.
+/* MosaicLoop service worker.
+ *
+ * Strategy:
+ *   network-first for the shell (HTML/JS/CSS/manifest), with a cache
+ *   fallback for offline. This is the right call while we're iterating —
+ *   cache-first means every code change spends a day fighting the SW.
+ *   We can switch back to cache-first once the app stabilises.
  */
-const VERSION = "v0.0.3-m1b";
+const VERSION = "v0.0.4-m1c";
 const SHELL_CACHE = `looper-shell-${VERSION}`;
 const SHELL_URLS = [
   "./",
@@ -27,21 +30,31 @@ self.addEventListener("activate", (event) => {
       Promise.all(
         keys.filter((k) => k !== SHELL_CACHE).map((k) => caches.delete(k))
       )
-    )
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
 
-  // Cache-first for the shell, network-first for everything else.
   const url = new URL(request.url);
-  if (url.origin === self.location.origin && SHELL_URLS.some(
-        (u) => url.pathname.endsWith(u.replace("./", "")))) {
-    event.respondWith(
-      caches.match(request).then((hit) => hit || fetch(request))
-    );
-  }
+  if (url.origin !== self.location.origin) return;
+
+  // Network-first: try fresh, fall back to cache when offline.
+  event.respondWith((async () => {
+    try {
+      const fresh = await fetch(request);
+      // Update the cache for offline use, best-effort.
+      try {
+        const cache = await caches.open(SHELL_CACHE);
+        cache.put(request, fresh.clone());
+      } catch (_) { /* ignore quota etc. */ }
+      return fresh;
+    } catch (_) {
+      const hit = await caches.match(request);
+      if (hit) return hit;
+      throw _;
+    }
+  })());
 });
