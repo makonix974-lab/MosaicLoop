@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sync.audio_sync import SyncManager
 from composer.video_composer import VideoComposer, CompositionConfig
@@ -178,6 +179,26 @@ def test_cli_config_template():
     print("  [OK] CLI config --template works")
 
 
+def test_gui_import():
+    """GUI module imports without error."""
+    from gui.main_window import MainWindow, run_gui
+    from gui.clip_list import ClipListWidget
+    from gui.settings_panel import SettingsPanel
+    from gui.workers import PipelineWorker
+    print("  [OK] GUI module imports OK")
+
+
+def test_cli_gui_help():
+    """CLI gui --help works."""
+    result = subprocess.run(
+        [sys.executable, "cli/main.py", "gui", "--help"],
+        capture_output=True, text=True,
+        cwd=Path(__file__).parent.parent,
+    )
+    assert result.returncode == 0
+    print("  [OK] CLI gui --help works")
+
+
 if __name__ == "__main__":
     print("=" * 50)
     print("GuitarMultiCam Studio - Test Suite")
@@ -199,6 +220,8 @@ if __name__ == "__main__":
         test_cli_auto_help,
         test_cli_smart_help,
         test_cli_config_template,
+        test_gui_import,
+        test_cli_gui_help,
     ]
 
     passed = 0

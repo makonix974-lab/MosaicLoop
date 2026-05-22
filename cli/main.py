@@ -14,6 +14,12 @@ import json
 import sys
 from pathlib import Path
 
+try:
+    import PyQt6
+    HAS_GUI = True
+except ImportError:
+    HAS_GUI = False
+
 import click
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -255,11 +261,25 @@ clips:
 
 
 @cli.command()
+def gui():
+    """Launch the graphical interface (PyQt6)."""
+    if not HAS_GUI:
+        click.echo("[FAIL] PyQt6 is required. Install: pip install PyQt6", err=True)
+        raise SystemExit(1)
+    try:
+        from gui.main_window import run_gui
+        run_gui()
+    except Exception as e:
+        click.echo(f"[FAIL] GUI error: {e}", err=True)
+        raise SystemExit(1)
+
+
+@cli.command()
 def clean():
     """Kill lingering ffmpeg processes (cleanup)."""
     ProcessGuard.cleanup_stale()
     click.echo("[OK] Done")
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     cli()
