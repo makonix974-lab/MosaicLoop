@@ -12,7 +12,7 @@
 <body>
   <header>
     <h1>MosaicLoop</h1>
-    <p class="tag">M5 — overdub · <span id="app-version">v0.0.8-m5</span></p>
+    <p class="tag">M5b — mic picker · <span id="app-version">v0.0.9-m5b</span></p>
   </header>
 
   <main>
@@ -109,6 +109,18 @@
         <video id="preview" autoplay muted playsinline></video>
         <video id="playback" controls playsinline hidden></video>
         <p id="rec-msg" class="muted">Tap <em>Enable camera</em> to start.</p>
+      </div>
+
+      <div class="metro-row mic-row">
+        <label for="mic-select">Mic</label>
+        <select id="mic-select" disabled>
+          <option>(enable camera first)</option>
+        </select>
+      </div>
+
+      <div class="vu-wrap">
+        <div class="vu-bar"><div id="vu-fill"></div></div>
+        <span id="vu-label" class="muted small">mic idle</span>
       </div>
 
       <div class="rec-meta">

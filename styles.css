@@ -344,3 +344,47 @@ input:disabled, select:disabled {
   opacity: 0.5;
   pointer-events: none;
 }
+
+/* ---------- Mic picker + VU meter ---------- */
+
+.mic-row select {
+  grid-column: 2 / span 2;
+  background: #1b1b1b;
+  border: 1px solid #333;
+  color: var(--fg);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  width: 100%;
+}
+
+.vu-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.vu-bar {
+  flex: 1;
+  height: 8px;
+  background: #1b1b1b;
+  border: 1px solid #333;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+#vu-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(to right, var(--ok) 0%, var(--ok) 70%,
+                                       var(--warn) 80%, var(--bad) 100%);
+  transition: width 60ms linear;
+}
+
+#vu-label {
+  min-width: 110px;
+  text-align: right;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
