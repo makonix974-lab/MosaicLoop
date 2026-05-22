@@ -4,18 +4,41 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#111111" />
-  <title>GuitarLooper</title>
+  <title>MosaicLoop</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <header>
-    <h1>GuitarLooper</h1>
-    <p class="tag">M0 — shell only</p>
+    <h1>MosaicLoop</h1>
+    <p class="tag">M1 — recorder</p>
   </header>
 
   <main>
+    <section class="card">
+      <h2>Recorder</h2>
+
+      <div id="rec-stage">
+        <video id="preview" autoplay muted playsinline></video>
+        <video id="playback" controls playsinline hidden></video>
+        <p id="rec-msg" class="muted">Tap <em>Enable camera</em> to start.</p>
+      </div>
+
+      <div class="rec-meta">
+        <span id="rec-timer">00:00</span>
+        <span id="rec-info" class="muted"></span>
+      </div>
+
+      <div class="rec-controls">
+        <button id="enable-btn">Enable camera</button>
+        <button id="record-btn" hidden>Record</button>
+        <button id="stop-btn" hidden>Stop</button>
+        <button id="flip-btn" hidden title="Switch camera">Flip</button>
+        <a id="download-link" hidden class="btn-link" download>Download</a>
+      </div>
+    </section>
+
     <section class="card">
       <h2>Status</h2>
       <ul id="status">
@@ -30,9 +53,7 @@
 
     <section class="card">
       <h2>Install</h2>
-      <p>Use the browser menu &raquo; <em>Add to Home screen</em>.
-        Once installed, open it from the home screen icon and this page
-        should report <code>standalone</code> below.</p>
+      <p>Use the browser menu &raquo; <em>Add to Home screen</em> to install.</p>
       <button id="install-btn" hidden>Install app</button>
     </section>
   </main>

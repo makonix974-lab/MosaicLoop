@@ -109,3 +109,74 @@ button:disabled {
 }
 
 p { line-height: 1.45; }
+
+/* ---------- Recorder ---------- */
+
+#rec-stage {
+  position: relative;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  margin-bottom: 10px;
+}
+
+#preview, #playback {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+#rec-msg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 12px;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--fg);
+}
+#rec-msg.muted { color: var(--muted); }
+#rec-msg.warn  { color: var(--warn); }
+#rec-msg.bad   { color: var(--bad);  }
+#rec-msg[hidden] { display: none; }
+
+.rec-meta {
+  display: flex;
+  justify-content: space-between;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.95rem;
+  margin-bottom: 10px;
+  color: var(--muted);
+}
+#rec-timer { color: var(--fg); }
+
+.rec-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.rec-controls button,
+.rec-controls .btn-link {
+  width: 100%;
+}
+#record-btn { background: var(--bad); color: #fff; }
+#stop-btn   { background: var(--warn); color: #000; }
+#flip-btn   { background: #333; color: var(--fg); }
+
+.btn-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  background: var(--ok);
+  color: #000;
+  font-weight: 600;
+  font-size: 1rem;
+  padding: 12px 20px;
+  border-radius: 8px;
+}
