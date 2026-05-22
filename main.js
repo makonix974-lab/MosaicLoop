@@ -193,6 +193,14 @@ async function onFlip() {
 
 function onRecord() {
   if (!recState.stream) return;
+  startRecording();
+}
+
+/** Build, start and return a MediaRecorder against the current stream.
+ *  Optional `durationSec` triggers an automatic stop. The existing UI
+ *  bindings (timer, blob preview, download link) all work the same. */
+function startRecording({ durationSec = 0, onAutoStop = null } = {}) {
+  if (!recState.stream) return null;
 
   // Throw away any previous blob URL so memory doesn't leak.
   if (recState.blobUrl) {
@@ -241,6 +249,7 @@ function onRecord() {
 
     $("rec-info").textContent = `${fmtBytes(blob.size)} • ${recState.mime || "video/webm"}`;
     setRecMode("stopped");
+    if (typeof onAutoStop === "function") onAutoStop({ blob, url });
   };
 
   recorder.onerror = (e) => {
@@ -249,10 +258,20 @@ function onRecord() {
 
   recState.recorder = recorder;
   recState.startTime = performance.now();
-  recorder.start();  // collect a single chunk on stop; timeslice comes later
+  recorder.start();
   setRecMode("recording");
   $("rec-info").textContent = "";
   startTimer();
+
+  if (durationSec > 0) {
+    setTimeout(() => {
+      if (recState.recorder && recState.recorder.state !== "inactive") {
+        recState.recorder.stop();
+      }
+      stopTimer();
+    }, Math.round(durationSec * 1000));
+  }
+  return recorder;
 }
 
 function onStop() {
@@ -384,6 +403,158 @@ function wireMetronome() {
   });
 }
 
+// ---------- Looper ----------
+//
+// Marries the metronome and the recorder. Workflow:
+//   1. user picks bars + count-in, clicks Arm
+//   2. metronome starts (if not already), so the user can hear the click
+//   3. we wait for the *next* downbeat, then play `count-in` bars
+//   4. at the downbeat after count-in, MediaRecorder.start() fires
+//   5. we auto-stop after exactly `bars * beats * 60/bpm` seconds
+//
+// Timing notes:
+//   - The downbeat is computed in AudioContext seconds (sample-accurate
+//     against the click). MediaRecorder.start() is fired via setTimeout
+//     against that target; setTimeout jitter on Android is 1-4 ms, well
+//     below one video frame at 30 fps.
+//   - We don't try to align audio and video sample boundaries: the
+//     desktop pipeline has its own sync stage and we'll trim there.
+
+const looperState = {
+  armed: false,
+  cancel: () => {},
+};
+
+function loopDurationSec() {
+  const bars = Math.max(1, Number($("loop-bars").value) || 1);
+  return bars * metro.beatsPerBar * (60 / metro.bpm);
+}
+
+function refreshLoopDurationLabel() {
+  const dur = loopDurationSec();
+  $("loop-duration").textContent = `${dur.toFixed(2)} s`;
+}
+
+function syncLoopBars(v) {
+  const n = Math.max(1, Math.min(32, Math.round(Number(v) || 1)));
+  $("loop-bars").value = n;
+  $("loop-bars-num").value = n;
+  refreshLoopDurationLabel();
+}
+
+function setLoopStatus(text, level = "muted") {
+  const el = $("loop-status");
+  el.textContent = text;
+  el.className = `small ${level}`;
+}
+
+function setLoopMode(mode) {
+  // 'idle' | 'armed' (waiting for downbeat / counting in / recording loop)
+  $("loop-arm-btn").hidden    = mode !== "idle";
+  $("loop-cancel-btn").hidden = mode !== "armed";
+}
+
+async function onArmLoop() {
+  if (looperState.armed) return;
+  if (!recState.stream) {
+    setLoopStatus("Enable the camera first.", "warn");
+    return;
+  }
+
+  const bars = Math.max(1, Number($("loop-bars").value) || 1);
+  const countInBars = Math.max(0, Number($("loop-countin").value) || 0);
+  const dur = loopDurationSec();
+
+  // Make sure the metronome is audible — start it if the user forgot.
+  if (!metro.isRunning) {
+    try { await metro.start(); }
+    catch (err) {
+      setLoopStatus(`Metronome failed: ${err.message}`, "bad");
+      return;
+    }
+    $("metro-toggle").textContent = "Stop metronome";
+    $("metro-toggle").classList.add("active");
+  }
+
+  looperState.armed = true;
+  setLoopMode("armed");
+
+  // The click that ended the previous bar is past; pick the *next* one.
+  const audioCtx = metro._ctx;  // friend access; metronome owns the clock
+  const downbeatA = metro.audioTimeOfNextDownbeat();
+  const period    = 60 / metro.bpm;
+  const downbeatB = downbeatA + countInBars * metro.beatsPerBar * period;
+
+  const msUntilCountIn = Math.max(0, (downbeatA - audioCtx.currentTime) * 1000);
+  const msUntilRecord  = Math.max(0, (downbeatB - audioCtx.currentTime) * 1000);
+
+  let cancelled = false;
+  let countTimer = 0;
+  let recordTimer = 0;
+
+  looperState.cancel = () => {
+    cancelled = true;
+    clearTimeout(countTimer);
+    clearTimeout(recordTimer);
+    looperState.armed = false;
+    setLoopMode("idle");
+    setLoopStatus("Cancelled.", "muted");
+  };
+
+  // Phase 1: announce the wait until the next downbeat.
+  setLoopStatus(
+    countInBars > 0
+      ? `Count-in starts in ${(msUntilCountIn / 1000).toFixed(2)} s`
+      : `Recording starts in ${(msUntilRecord / 1000).toFixed(2)} s`,
+    "warn"
+  );
+
+  // Phase 2: count-in (purely UI; the metronome is already clicking).
+  if (countInBars > 0) {
+    countTimer = setTimeout(() => {
+      if (cancelled) return;
+      setLoopStatus(`Count-in… ${countInBars} bar(s)`, "warn");
+    }, msUntilCountIn);
+  }
+
+  // Phase 3: actual record.
+  recordTimer = setTimeout(() => {
+    if (cancelled) return;
+    setLoopStatus(`Recording ${bars} bar(s) (${dur.toFixed(2)} s)…`, "bad");
+    startRecording({
+      durationSec: dur,
+      onAutoStop: () => {
+        looperState.armed = false;
+        setLoopMode("idle");
+        setLoopStatus(`Loop captured (${dur.toFixed(2)} s).`, "ok");
+      },
+    });
+  }, msUntilRecord);
+}
+
+function onCancelLoop() {
+  looperState.cancel();
+}
+
+function wireLooper() {
+  const onBars = (raw) => syncLoopBars(raw);
+  $("loop-bars").addEventListener("input", (e) => onBars(e.target.value));
+  $("loop-bars-num").addEventListener("change", (e) => onBars(e.target.value));
+  $("loop-countin").addEventListener("change", refreshLoopDurationLabel);
+
+  $("loop-arm-btn").addEventListener("click", onArmLoop);
+  $("loop-cancel-btn").addEventListener("click", onCancelLoop);
+
+  // BPM and beats-per-bar live in the metronome card; they affect the
+  // computed loop duration so we reflect that here.
+  $("metro-bpm").addEventListener("input", refreshLoopDurationLabel);
+  $("metro-bpm-num").addEventListener("change", refreshLoopDurationLabel);
+  $("metro-beats").addEventListener("change", refreshLoopDurationLabel);
+
+  refreshLoopDurationLabel();
+  setLoopMode("idle");
+}
+
 // ---------- Boot ----------
 
 reportEnvironment();
@@ -391,4 +562,5 @@ registerServiceWorker();
 wireInstallPrompt();
 wireRecorder();
 wireMetronome();
+wireLooper();
 setRecMode("idle");
