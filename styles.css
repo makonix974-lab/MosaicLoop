@@ -388,3 +388,14 @@ input:disabled, select:disabled {
   text-align: right;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+
+/* Monitor offset row inherits .metro-row but the number input is
+   wider here because we go up to 500 (3 digits + sign). */
+.offset-row input[type="number"] {
+  min-width: 70px;
+}
+
+#latency-info {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin: 0 0 8px;
+}

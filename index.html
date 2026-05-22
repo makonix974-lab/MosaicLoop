@@ -12,7 +12,7 @@
 <body>
   <header>
     <h1>MosaicLoop</h1>
-    <p class="tag">M6b — sync trim · <span id="app-version">v0.0.12-m6b</span></p>
+    <p class="tag">M6c — latency · <span id="app-version">v0.0.13-m6c</span></p>
   </header>
 
   <main>
@@ -40,6 +40,14 @@
         <input type="range" id="monitor-vol" min="0" max="1" step="0.01" value="0.8" />
         <span class="muted small" id="loop-take-counter">Take 1</span>
       </div>
+
+      <div class="metro-row offset-row">
+        <label for="monitor-offset">Offset (ms)</label>
+        <input type="range" id="monitor-offset" min="-500" max="500" step="1" value="0" />
+        <input type="number" id="monitor-offset-num" min="-500" max="500" step="1" value="0" />
+      </div>
+
+      <p class="muted small" id="latency-info">Auto latency: —</p>
 
       <p id="loop-status" class="muted small">Enable the camera, then arm.</p>
 
