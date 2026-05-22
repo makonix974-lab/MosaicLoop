@@ -290,61 +290,78 @@ class VideoComposer:
         finally:
             Path(concat_list_path).unlink(missing_ok=True)
     
-    def compose_grid(self, clips: list, output_path: str = None, 
-                     show_progress: bool = True, audio_source: int = 0) -> dict:
+    def compose_grid(self, clips: list, output_path: str = None,
+                     show_progress: bool = True, audio_source: int = 0,
+                     pad_seconds: list = None) -> dict:
         """
-        Create a 2x2 grid layout with synchronized audio from one source.
-        
+        Render a grid layout from N clips in a single FFmpeg pass.
+
+        When `pad_seconds` is provided (list of non-negative floats, one per
+        clip), each input video is delayed by its pad before being scaled
+        and stacked, and the chosen audio source is delayed by its own pad.
+        This collapses what was previously two separate steps (apply_offsets
+        + compose_grid) into one FFmpeg invocation, eliminating intermediate
+        files entirely.
+
         Args:
-            clips: List of ClipAnalysis or SimpleClip objects
-            output_path: Optional output path
-            show_progress: Progress bar during encoding
-            audio_source: Index of clip to use for audio (default: 0)
+            clips: list of objects with a `.path` attribute (e.g. SimpleClip)
+            output_path: override self.config.output_path
+            show_progress: ASCII progress bar during encoding
+            audio_source: index of the clip whose audio is used
+            pad_seconds: per-clip delay in seconds (>=0). None => no padding.
         """
         if output_path:
             self.config.output_path = output_path
-        
-        if len(clips) == 0:
-            return {'error': 'No clips'}
-        
+        if not clips:
+            return {'success': False, 'error': 'No clips'}
+
         max_clips = min(len(clips), self.config.grid_cols * self.config.grid_rows)
         selected_clips = clips[:max_clips]
-        
-        # Build grid filter for video
-        filter_complex = self._build_grid_filter(selected_clips)
-        
-        # Build FFmpeg command: inputs + filter + map video + map audio + encode
+        pads = list(pad_seconds) if pad_seconds else [0.0] * len(selected_clips)
+        # Pad list to match selected_clips length (truncate or extend with 0)
+        pads = (pads[:max_clips] + [0.0] * max_clips)[:max_clips]
+
+        filter_complex = self._build_grid_filter_with_pads(selected_clips, pads)
+        audio_pad_s = pads[audio_source] if audio_source < len(pads) else 0.0
+        if audio_pad_s > 0.05:
+            filter_complex = (
+                filter_complex + ";" +
+                self._audio_pad_chain(audio_source, audio_pad_s)
+            )
+
         cmd = [self.ffmpeg, '-y']
-        
         for clip in selected_clips:
             cmd.extend(['-i', clip.path])
-        
-        cmd.extend(['-filter_complex', filter_complex])
-        cmd.extend(['-map', '[grid]'])  # Map the grid video output
-        cmd.extend(['-map', f'{audio_source}:a'])  # Map audio from chosen source
-        
-        # Audio: re-encode to AAC
-        cmd.extend(['-c:a', 'aac', '-b:a', '128k'])
 
-        # Video encoding (force output FPS to avoid encoding source framerate)
+        cmd.extend(['-filter_complex', filter_complex])
+        cmd.extend(['-map', '[grid]'])
+
+        if audio_pad_s > 0.05:
+            cmd.extend(['-map', '[aout]'])
+        else:
+            cmd.extend(['-map', f'{audio_source}:a'])
+
+        cmd.extend(['-c:a', 'aac', '-b:a', '128k'])
         cmd.extend([
             '-c:v', self.config.output_codec,
             '-preset', 'fast',
             '-crf', str(self.config.output_crf),
-            '-r', str(self.config.output_fps)
+            '-r', str(self.config.output_fps),
         ])
-
         cmd.append(self.config.output_path)
 
-        total_duration = max(
-            (c.audio.duration if hasattr(c, 'audio') and c.audio else
-             getattr(c, 'duration', 0)) for c in selected_clips
-        )
-        if not total_duration or total_duration <= 0:
+        # Estimate total duration: longest clip + its pad
+        durations = []
+        for i, c in enumerate(selected_clips):
+            d = (c.audio.duration if hasattr(c, 'audio') and c.audio
+                 else getattr(c, 'duration', 0)) or 0
+            durations.append(d + pads[i])
+        total_duration = max(durations) if durations else 200
+        if total_duration <= 0:
             total_duration = 200
 
         if show_progress:
-            print("   Rendering 2x2 grid...")
+            print("   Rendering grid...")
             ProcessGuard.cleanup_stale()
 
         result = run_ffmpeg(
@@ -367,47 +384,67 @@ class VideoComposer:
         }
     
     def _build_grid_filter(self, clips: list) -> str:
+        """Backward-compatible: build grid filter without padding."""
+        return self._build_grid_filter_with_pads(clips, [0.0] * len(clips))
+
+    def _build_grid_filter_with_pads(self, clips: list, pads: list) -> str:
         """
-        Build FFmpeg hstack/vstack filter for 2x2 grid.
+        Build FFmpeg filter_complex for an N-cell grid with optional per-clip
+        VIDEO padding applied BEFORE scaling.
+
+        For each input i with pad p_i (seconds):
+          - if p_i > 0.05: prepend p_i seconds of black via tpad
+          - then scale to cell size + center-crop
+
+        Audio is handled separately by compose_grid (see _build_audio_chain).
+
         Output label: [grid]
-        Cell size: 960x540 (for 1080p grid output)
         """
         cols = self.config.grid_cols
         rows = self.config.grid_rows
         cell_w = self.config.grid_cell_width
         cell_h = self.config.grid_cell_height
-        
-        filters = []
-        
-        # Scale each input to cell size
+
+        filters: list[str] = []
+
         for i in range(len(clips)):
-            filters.append(
-                f"[{i}:v]scale={cell_w}:{cell_h}:force_original_aspect_ratio=increase,"
-                f"crop={cell_w}:{cell_h}[v{i}]"
+            pad = float(pads[i]) if i < len(pads) else 0.0
+            chain_ops: list[str] = []
+            if pad > 0.05:
+                chain_ops.append(
+                    f"tpad=start_duration={pad:.3f}:start_mode=add:color=black"
+                )
+            chain_ops.append(
+                f"scale={cell_w}:{cell_h}:force_original_aspect_ratio=increase"
             )
-        
-        # Build rows with hstack
+            chain_ops.append(f"crop={cell_w}:{cell_h}")
+            filters.append(f"[{i}:v]" + ",".join(chain_ops) + f"[v{i}]")
+
         for row in range(rows):
             idx_start = row * cols
             idx_end = min(idx_start + cols, len(clips))
             n_in_row = idx_end - idx_start
-            
             if n_in_row == 0:
                 continue
-            
             if n_in_row == 1:
                 filters.append(f"[v{idx_start}]copy[row{row}]")
             else:
-                inputs = ''.join(f"[v{idx_start + c}]" for c in range(n_in_row))
+                inputs = "".join(f"[v{idx_start + c}]" for c in range(n_in_row))
                 filters.append(f"{inputs}hstack=inputs={n_in_row}[row{row}]")
-        
-        # Stack rows vertically
-        row_labels = ''.join(f"[row{r}]" for r in range(rows) if r * cols < len(clips))
+
+        row_labels = "".join(
+            f"[row{r}]" for r in range(rows) if r * cols < len(clips)
+        )
         n_rows = sum(1 for r in range(rows) if r * cols < len(clips))
-        
         if n_rows == 1:
             filters.append(f"{row_labels}copy[grid]")
         else:
             filters.append(f"{row_labels}vstack=inputs={n_rows}[grid]")
 
         return ";".join(filters)
+
+    @staticmethod
+    def _audio_pad_chain(audio_source: int, pad_seconds: float) -> str:
+        """Audio sub-filter for padding the audio source. Output: [aout]."""
+        ms = int(round(pad_seconds * 1000))
+        return f"[{audio_source}:a]adelay={ms}|{ms}[aout]"

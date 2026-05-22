@@ -96,8 +96,7 @@ class Pipeline:
 
         proxies = self._step_proxy(cfg)
         alignment = self._step_sync(cfg, proxies)
-        synced = self._step_apply_offsets(cfg, proxies, alignment)
-        result = self._step_compose(cfg, synced, alignment)
+        result = self._step_compose_synced(cfg, proxies, alignment)
 
         elapsed = time.time() - start
         result["elapsed"] = round(elapsed, 1)
@@ -116,7 +115,7 @@ class Pipeline:
         return {"success": True, "clips": [c.to_dict() for c in clips]}
 
     def _step_proxy(self, cfg: PipelineConfig) -> list[tuple[str, str]]:
-        print("\n[1/4] Proxy generation")
+        print("\n[1/3] Proxy generation")
         if not cfg.use_proxy:
             print("   Skipped (use_proxy=False)")
             return [(p, p) for p in cfg.clips]
@@ -134,7 +133,7 @@ class Pipeline:
 
     def _step_sync(self, cfg: PipelineConfig,
                    proxies: list[tuple[str, str]]) -> AlignmentResult:
-        print("\n[2/4] Audio sync")
+        print("\n[2/3] Audio sync")
         t0 = time.time()
         sync = SyncManager()
         alignment = sync.align_clips(cfg.clips)
@@ -143,119 +142,14 @@ class Pipeline:
         print(f"   {time.time() - t0:.1f}s")
         return alignment
 
-    def _validate_video_file(self, path: str) -> bool:
-        """Validate video file with ffprobe. Returns True if valid."""
-        try:
-            result = subprocess.run(
-                ["ffprobe", "-v", "error", "-show_entries", 
-                 "format=duration", "-of", "json", path],
-                capture_output=True, text=True, timeout=10
-            )
-            if result.returncode != 0:
-                return False
-            data = json.loads(result.stdout)
-            return "format" in data and "duration" in data["format"]
-        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
-            return False
-
-    def _cleanup_corrupted_files(self, directory: Path):
-        """Remove corrupted video files (moov atom not found)."""
-        if not directory.exists():
-            return
-        for f in directory.glob("*.mp4"):
-            if not self._validate_video_file(str(f)):
-                print(f"   Removing corrupted: {f.name}")
-                f.unlink(missing_ok=True)
-
-    def _step_apply_offsets(self, cfg: PipelineConfig,
-                            proxies: list[tuple[str, str]],
-                            alignment: AlignmentResult) -> list[str]:
-        print("\n[3/4] Apply sync offsets")
-        t0 = time.time()
-        min_offset = min(alignment.offsets.values())
-        synced = []
-        output_dir = Path(cfg.output_path).parent / "_synced"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Cleanup corrupted files from previous runs
-        self._cleanup_corrupted_files(output_dir)
-
-        for src_path, proxy_path in proxies:
-            name = Path(src_path).name
-            offset = alignment.offsets.get(name, 0.0)
-            pad = offset - min_offset
-            out_path = output_dir / f"synced_{name}"
-            synced.append(str(out_path))
-
-            try:
-                if abs(pad) < 0.05:
-                    # No adjustment needed
-                    cmd = ["ffmpeg", "-y", "-i", proxy_path,
-                           "-c", "copy", str(out_path)]
-                    subprocess.run(cmd, capture_output=True, text=True, 
-                                 timeout=300, check=True)
-                    
-                elif pad > 0:
-                    # Need padding: use concat demuxer (simpler than filter_complex)
-                    # Create temporary black video
-                    black_path = output_dir / f"_black_{pad:.3f}s.mp4"
-                    cmd_black = [
-                        "ffmpeg", "-y", "-f", "lavfi", "-t", f"{pad:.3f}",
-                        "-i", f"color=c=black:s={cfg.proxy_width}x{cfg.proxy_height}:r={cfg.output_fps}",
-                        "-f", "lavfi", "-t", f"{pad:.3f}",
-                        "-i", "anullsrc=r=48000:cl=mono",
-                        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-                        "-c:a", "aac", "-shortest", str(black_path)
-                    ]
-                    subprocess.run(cmd_black, capture_output=True, text=True,
-                                 timeout=60, check=True)
-                    
-                    # Concat with demuxer
-                    concat_list = output_dir / f"_concat_{name}.txt"
-                    with open(concat_list, 'w') as f:
-                        f.write(f"file '{black_path.absolute()}'\n")
-                        f.write(f"file '{Path(proxy_path).absolute()}'\n")
-                    
-                    cmd_concat = [
-                        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-                        "-i", str(concat_list),
-                        "-c", "copy", str(out_path)
-                    ]
-                    subprocess.run(cmd_concat, capture_output=True, text=True,
-                                 timeout=300, check=True)
-                    
-                    # Cleanup temp files
-                    black_path.unlink(missing_ok=True)
-                    concat_list.unlink(missing_ok=True)
-                    
-                else:
-                    # Need trimming
-                    trim = -pad
-                    cmd = ["ffmpeg", "-y", "-ss", f"{trim:.3f}",
-                           "-i", proxy_path, "-c", "copy", str(out_path)]
-                    subprocess.run(cmd, capture_output=True, text=True,
-                                 timeout=300, check=True)
-                
-                # Validate output
-                if not self._validate_video_file(str(out_path)):
-                    raise RuntimeError(f"Output validation failed: {out_path.name}")
-                    
-            except subprocess.TimeoutExpired:
-                print(f"   [TIMEOUT] {name} (>300s)")
-                out_path.unlink(missing_ok=True)
-                raise RuntimeError(f"FFmpeg timeout on {name}")
-            except subprocess.CalledProcessError as e:
-                print(f"   [ERROR] {name}: {e}")
-                out_path.unlink(missing_ok=True)
-                raise RuntimeError(f"FFmpeg failed on {name}")
-
-        print(f"   {time.time() - t0:.1f}s")
-        return synced
-
-    def _step_compose(self, cfg: PipelineConfig,
-                      synced: list[str],
-                      alignment: AlignmentResult) -> dict:
-        print("\n[4/4] Grid composition")
+    def _step_compose_synced(self, cfg: PipelineConfig,
+                             proxies: list[tuple[str, str]],
+                             alignment: AlignmentResult) -> dict:
+        """
+        Single-pass compose: applies sync pads inside the filter_complex.
+        No intermediate _synced/ files; one FFmpeg invocation.
+        """
+        print("\n[3/3] Grid composition (with sync pads)")
 
         self._apply_preset(cfg)
 
@@ -275,20 +169,36 @@ class Pipeline:
             grid_cell_height=cell_h,
         )
 
-        t0 = time.time()
-        composer = VideoComposer(config)
+        # Compute per-clip pad in seconds (relative to earliest start)
+        min_offset = min(alignment.offsets.values())
 
-        class ClipWrap:
+        class _ClipRef:
+            __slots__ = ("path", "name", "duration")
+
             def __init__(self, path: str):
                 self.path = path
                 self.name = Path(path).name
-                self.audio = type("a", (), {"duration": 0})()
+                # Audio duration unknown here; composer falls back gracefully
+                self.duration = 0
 
-        grid_clips = [ClipWrap(p) for p in synced]
+        # Use proxies (smaller, faster) as inputs to compose
+        clip_refs: list[_ClipRef] = []
+        pads: list[float] = []
+        for src_path, proxy_path in proxies:
+            ref = _ClipRef(proxy_path)
+            offset = alignment.offsets.get(Path(src_path).name, 0.0)
+            pad = offset - min_offset
+            clip_refs.append(ref)
+            pads.append(max(0.0, pad))
+
+        t0 = time.time()
+        composer = VideoComposer(config)
         result = composer.compose_grid(
-            grid_clips, show_progress=True, audio_source=cfg.audio_source
+            clip_refs,
+            show_progress=True,
+            audio_source=cfg.audio_source,
+            pad_seconds=pads,
         )
-
         result["elapsed"] = round(time.time() - t0, 1)
         return result
 
