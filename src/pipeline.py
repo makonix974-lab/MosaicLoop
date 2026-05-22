@@ -16,6 +16,7 @@ from sync.audio_sync import SyncManager, AlignmentResult
 from composer.video_composer import VideoComposer, CompositionConfig
 from composer.proxy import ProxyManager, ProxyConfig
 from composer.process_guard import ProcessGuard
+from models import Clip
 
 
 @dataclass
@@ -172,24 +173,21 @@ class Pipeline:
         # Compute per-clip pad in seconds (relative to earliest start)
         min_offset = min(alignment.offsets.values())
 
-        class _ClipRef:
-            __slots__ = ("path", "name", "duration")
-
-            def __init__(self, path: str):
-                self.path = path
-                self.name = Path(path).name
-                # Audio duration unknown here; composer falls back gracefully
-                self.duration = 0
-
-        # Use proxies (smaller, faster) as inputs to compose
-        clip_refs: list[_ClipRef] = []
+        # Build unified Clip objects pointing at the proxy renderable
+        clip_refs: list[Clip] = []
         pads: list[float] = []
         for src_path, proxy_path in proxies:
-            ref = _ClipRef(proxy_path)
+            clip = Clip(path=src_path, proxy_path=proxy_path)
             offset = alignment.offsets.get(Path(src_path).name, 0.0)
             pad = offset - min_offset
-            clip_refs.append(ref)
+            clip_refs.append(clip)
             pads.append(max(0.0, pad))
+
+        # The composer reads `c.path` as the FFmpeg input. Point it at the
+        # proxy through render_path semantics: temporarily swap path on the
+        # clips so existing composer code stays untouched.
+        for c in clip_refs:
+            c.path = c.render_path
 
         t0 = time.time()
         composer = VideoComposer(config)

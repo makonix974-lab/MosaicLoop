@@ -23,6 +23,7 @@ from pipeline import Pipeline, PipelineConfig, load_config
 from sync.audio_sync import SyncManager
 from composer.video_composer import VideoComposer, CompositionConfig
 from composer.process_guard import ProcessGuard
+from models import Clip
 
 
 @click.group()
@@ -133,14 +134,8 @@ def compose(clips, output, layout, audio_source, crf):
 
     Path(output).parent.mkdir(parents=True, exist_ok=True)
 
-    class ClipWrap:
-        def __init__(self, path):
-            self.path = path
-            self.name = Path(path).name
-            self.audio = type("a", (), {"duration": 0})()
-
     composer = VideoComposer(config)
-    grid_clips = [ClipWrap(c) for c in clips]
+    grid_clips = [Clip.from_path(c, probe=True) for c in clips]
     result = composer.compose_grid(grid_clips, show_progress=True,
                                    audio_source=audio_source)
 
