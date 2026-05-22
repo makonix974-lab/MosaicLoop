@@ -803,6 +803,7 @@ const takes = {
   list: [],            // [{ id, blob, url, audioBuffer, mime }]
   monitorGain: null,
   scheduledNodes: [],
+  manualOffsetSec: 0,  // user-tunable fine offset for monitor playback
 };
 
 function ensureMonitorGain() {
@@ -916,6 +917,19 @@ function scheduleTakesAt(audioStartTime) {
   stopAllScheduledTakes();
   ensureMonitorGain();
   if (!takes.monitorGain) return;
+
+  // Pull the *output* latency from the AudioContext so we know how
+  // long it takes the click and the monitor mix to actually reach the
+  // user's ears. On Bluetooth this is typically 100-250 ms. We start
+  // the buffer that much earlier in audio time so its first audible
+  // sample lands on the same wall-clock moment as the click.
+  // outputLatency may be 0 on browsers that don't implement it; in
+  // that case the manual offset slider takes over.
+  const outputLatency = (metro._ctx && metro._ctx.outputLatency) || 0;
+  const totalShift = outputLatency + takes.manualOffsetSec;
+  const playWhen = Math.max(metro._ctx.currentTime,
+                            audioStartTime - totalShift);
+
   for (const t of takes.list) {
     if (!t.audioBuffer) continue;
     const src = metro._ctx.createBufferSource();
@@ -925,9 +939,34 @@ function scheduleTakesAt(audioStartTime) {
     // so the first audible sample lands on `audioStartTime` instead
     // of `audioStartTime + recorder lag`. Each take has its own
     // measurement done once at decode time.
-    src.start(audioStartTime, t.leadingSilenceSec || 0);
+    src.start(playWhen, t.leadingSilenceSec || 0);
     takes.scheduledNodes.push(src);
   }
+}
+
+function refreshLatencyInfo() {
+  const el = $("latency-info");
+  if (!el) return;
+  if (!metro._ctx) {
+    el.textContent = "Auto latency: — (start metronome to detect)";
+    return;
+  }
+  const out = metro._ctx.outputLatency || 0;
+  const base = metro._ctx.baseLatency || 0;
+  const manual = takes.manualOffsetSec * 1000;
+  const total = out * 1000 + manual;
+  el.textContent =
+    `Auto: ${(out * 1000).toFixed(0)} ms (base ${(base * 1000).toFixed(0)})` +
+    ` · Manual: ${manual >= 0 ? "+" : ""}${manual.toFixed(0)} ms` +
+    ` · Total shift: ${total.toFixed(0)} ms earlier`;
+}
+
+function setManualMonitorOffset(ms) {
+  const v = Math.max(-500, Math.min(500, Math.round(Number(ms) || 0)));
+  takes.manualOffsetSec = v / 1000;
+  $("monitor-offset").value = v;
+  $("monitor-offset-num").value = v;
+  refreshLatencyInfo();
 }
 
 function stopAllScheduledTakes() {
@@ -995,8 +1034,23 @@ function wireTakes() {
   $("monitor-vol").addEventListener("input", (e) => setMonitorVolume(e.target.value));
   $("takes-clear-btn").addEventListener("click", clearAllTakes);
   $("takes-export-btn").addEventListener("click", exportSession);
+
+  const onOffset = (raw) => setManualMonitorOffset(raw);
+  $("monitor-offset").addEventListener("input", (e) => onOffset(e.target.value));
+  $("monitor-offset-num").addEventListener("change", (e) => onOffset(e.target.value));
+
   applyTempoLock();
   updateTakeCounter();
+  refreshLatencyInfo();
+
+  // outputLatency only becomes meaningful after the AudioContext
+  // resumes; refresh the info line periodically until it's non-zero.
+  const poll = setInterval(() => {
+    if (metro._ctx && metro._ctx.outputLatency) {
+      refreshLatencyInfo();
+      clearInterval(poll);
+    }
+  }, 1000);
 }
 
 // ---------- Export ----------
@@ -1021,6 +1075,9 @@ function buildSessionManifest() {
     app_version: $("app-version").textContent,
     tempo: { bpm, beats_per_bar: beatsPerBar },
     loop: { bars, count_in_bars: countIn, duration_seconds: loopSec },
+    monitor_offset_seconds: Number(takes.manualOffsetSec.toFixed(4)),
+    output_latency_seconds:
+      Number(((metro._ctx && metro._ctx.outputLatency) || 0).toFixed(4)),
     takes: takes.list.map((t) => ({
       id: t.id,
       file: `takes/take-${String(t.id).padStart(2, "0")}.${ext(t.mime)}`,

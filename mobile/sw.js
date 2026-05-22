@@ -6,7 +6,7 @@
  *   cache-first means every code change spends a day fighting the SW.
  *   We can switch back to cache-first once the app stabilises.
  */
-const VERSION = "v0.0.12-m6b";
+const VERSION = "v0.0.13-m6c";
 const SHELL_CACHE = `looper-shell-${VERSION}`;
 const SHELL_URLS = [
   "./",
